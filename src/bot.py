@@ -6,21 +6,21 @@ from io import BytesIO
 from datetime import datetime
 from urllib.parse import quote
 
-import aiohttp
 import discord
 from PIL import Image
 from discord import app_commands
 from discord.ext import commands
 
-from utils import load_dotenv, generate_secure_string, cache_with_ttl
+from utils import (
+    load_dotenv, generate_secure_string, cache_with_ttl,
+    http_request
+)
 
 
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY")
-TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY")
 REDIRECT_URI = quote("https://" + os.getenv("REDIRECT_URI") + "/verify")
 
 
@@ -39,13 +39,11 @@ async def check_latency() -> int:
         int: The latency of the API request in milliseconds.
     """
 
-    async with aiohttp.ClientSession() as session:
-        start_time = time.perf_counter()
-        async with session.get("https://discord.com/api/"):
-            end_time = time.perf_counter()
-            api_latency = round((end_time - start_time) * 1000)
+    start_time = time.perf_counter()
+    http_request("https://discord.com/api", is_json = True)
+    end_time = time.perf_counter()
 
-    return api_latency
+    return round((end_time - start_time) * 1000)
 
 
 @bot.tree.command(name = "ping", description = "View the latency of the bot")

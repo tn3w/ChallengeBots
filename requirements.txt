@@ -1,5 +1,5 @@
 discord.py
-aiohttp
 asyncio
 pillow
 uvloop
+sanic
