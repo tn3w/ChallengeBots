@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-QR1mJVNh13ePcY8TlxdPzvzBE945a0' https://challenges.cloudflare.com/turnstile/v0/api.js; frame-src 'self' https://challenges.cloudflare.com/; img-src https://cdn.discordapp.com/embed/avatars/ https://cdn.discordapp.com/avatars/;">
+        <title>🤖 Beep beop Boop? | ChallengeBots</title>
+        <style>
+            :root {
+                --background: #f2f2f2;
+                --text: #181818;
+            }
+
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --background: #121212;
+                    --text: #f2f2f2;
+                }
+            }
+
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+                font-family: Arial, sans-serif;
+            }
+
+            body {
+                background-color: var(--background);
+                color: var(--text);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .profile-image {
+                width: 150px;
+                height: 150px;
+                border-radius: 50%;
+                background-color: #ccc;
+                margin-bottom: 20px;
+            }
+
+            .user-info {
+                font-size: 1.5rem;
+                font-weight: bold;
+                margin-bottom: 20px;
+            }
+
+            #captchaContainer {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                flex-direction: column;
+                width: 100%;
+                height: 100%;
+            }
+        </style>
+        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    </head>
+    <body>
+        <img class="profile-image" src="{{ avatar_url }}"></div>
+        <div class="user-info">{{ user_name }}{% if discriminator != 0 %}#{{ discriminator }}{% endif %}</div>
+        <form id="captchaForm" action="/verified" method="post">
+            <input type="hidden" name="state" value="{{ state }}">
+            <input type="hidden" name="session" value="{{ session }}">
+            <div id="captchaContainer" class="cf-turnstile" data-sitekey="{{ cf_turnstile_site_key }}" data-callback="onSuccess"></div>
+        </form>
+        <script type="text/javascript" nonce="QR1mJVNh13ePcY8TlxdPzvzBE945a0">
+            function onSuccess() {
+                document.getElementById('captchaForm').submit();
+            }
+        </script>
+    </body>
+</html>

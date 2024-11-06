@@ -4,3 +4,4 @@ pillow
 uvloop
 sanic
 jinja2
+cryptography

@@ -3,7 +3,7 @@ import time
 import random
 import asyncio
 from io import BytesIO
-from datetime import datetime
+from typing import Optional
 from urllib.parse import quote
 
 import discord
@@ -11,9 +11,13 @@ from PIL import Image
 from discord import app_commands
 from discord.ext import commands
 
+from src.logger import log
+from src.discordauth import User
+from src.files import CURRENT_DIRECTORY_PATH
+from src.database import get_database, get_database_decrypted
 from src.utils import (
-    CURRENT_DIRECTORY_PATH, load_dotenv, generate_secure_string,
-    cache_with_ttl, http_request
+    load_dotenv, generate_secure_string, cache_with_ttl,
+    http_request
 )
 
 
@@ -28,6 +32,73 @@ intents = discord.Intents.default()
 intents.members = True
 
 bot = commands.Bot(command_prefix = "/", intents = intents)
+
+
+def has_role(role_id: int, guild_id: Optional[int] = None,
+             member_id: Optional[int] = None, guild: Optional[discord.Guild] = None,
+             member: Optional[discord.Member] = None) -> bool:
+    """
+    Checks if a member has a specific role in a Discord guild.
+
+    This function determines whether a member is already verified by checking
+    if they possess the specified role. It can retrieve the member either by
+    providing a member object directly or by using the guild ID and member ID.
+
+    Args:
+        role_id (int): The ID of the role to check for verification.
+        guild_id (Optional[int]): The ID of the guild where the member resides.
+                                  Required if `guild` is not provided.
+        member_id (Optional[int]): The ID of the member to check for the role.
+                                   Required if `member` is not provided.
+        guild (Optional[discord.Guild]): An optional Discord guild object.
+                                          If provided, `guild_id` is not needed.
+        member (Optional[discord.Member]): An optional Discord member object.
+                                           If provided, `member_id` is not needed.
+
+    Returns:
+        bool: True if the member has the specified role, False otherwise.
+    """
+
+    if member is None:
+        if guild is None:
+            guild = bot.get_guild(guild_id)
+        member = guild.get_member(member_id)
+
+    return member.get_role(role_id) is not None
+
+
+def verify_user(guild_id: int, role_id: int, user: User, was_verified: bool = False) -> bool:
+    """
+    Verifies a user by assigning them a specific role in a Discord guild.
+
+    Args:
+        guild_id (int): The ID of the Discord guild where the user is to be verified.
+        role_id (int): The ID of the role to assign to the user upon verification.
+        user (User): The User object representing the user to be verified.
+        was_verified (bool): A flag indicating whether the user was previously verified.
+                             Defaults to False.
+
+    Returns:
+        bool: True if the user was successfully verified (role assigned or already verified),
+              False if the verification process failed.
+    """
+
+    verified_users = get_database("verified_users", 1200)
+    verified_users[user.user_id] = None
+
+    guild = bot.get_guild(guild_id)
+    if guild:
+        role = guild.get_role(role_id)
+        member = guild.get_member(user.user_id)
+
+        if member and role:
+            if not was_verified and has_role(role_id, member = member):
+                return True
+
+            bot.loop.create_task(member.add_roles(role))
+            return True
+
+    return False
 
 
 @cache_with_ttl(20)
@@ -84,7 +155,7 @@ async def add(interaction: discord.Interaction, role: discord.Role) -> None:
         )
         return
 
-    states = get_database("states", None)
+    states = get_database_decrypted("states", None)
 
     state = None
     value = (interaction.guild_id, role.id)
@@ -173,9 +244,9 @@ async def update_banner() -> None:
 
             try:
                 await bot.user.edit(banner=banner_buffer.read())
-                print(f"Banner updated at {datetime.now()}")
-            except Exception as e:
-                print(f"Error updating banner: {e}")
+                log("Banner updated.")
+            except Exception:
+                log("Error updating banner.", level = 4)
 
         await asyncio.sleep(3600) # 1 hour
 
@@ -191,13 +262,13 @@ async def on_ready() -> None:
 
     bot.loop.create_task(update_banner())
 
-    print(f"Logged in as {bot.user}")
+    log(f"Logged in as {bot.user}.", level = 2)
 
     try:
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} commands.")
+        log(f"Synced {len(synced)} commands.")
     except Exception as e:
-        print(f"Error syncing commands: {e}")
+        log("Error syncing commands.", level = 4)
 
 
 async def run_bot() -> None:
