@@ -90,8 +90,6 @@ async def run_app() -> None:
             "key": KEY_FILE_PATH
         }
 
-    print(HOST)
-
     server = await app.create_server(
         port = PORT,
         host = HOST,
