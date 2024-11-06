@@ -1,5 +1,4 @@
 import os
-from typing import Final
 from urllib.parse import quote
 
 import asyncio
@@ -56,6 +55,17 @@ def render_template(template_name: str, **context) -> str:
 
 @app.route("/", methods = ["GET", "POST"])
 async def index(_: Request) -> HTTPResponse:
+    """
+    Handles requests to the root URL ("/") of the application.
+
+    Args:
+        _: Request: The incoming request object. The parameter is named with an 
+                    underscore to indicate that it is unused in this function.
+
+    Returns:
+        HTTPResponse: The HTML response containing the rendered "index" template.
+    """
+
     template = render_template(
         "index", client_id = CLIENT_ID,
         redirect_uri = REDIRECT_URI,
