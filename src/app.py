@@ -8,18 +8,18 @@ from sanic.response import html
 from sanic import Sanic, Request, HTTPResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from src.utils import load_dotenv
 from src.bot import bot as discord_bot
+from src.utils import CURRENT_DIRECTORY_PATH, load_dotenv
 
-
-CURRENT_DIRECTORY_PATH: Final[str] = os.path.dirname(os.path.abspath(__file__))
 
 load_dotenv()
 PORT = os.getenv("PORT")
 HOST = os.getenv("HOST")
+CERT_FILE_PATH = os.getenv("CERT_FILE_PATH")
+KEY_FILE_PATH = os.getenv("KEY_FILE_PATH")
 
 CLIENT_ID = os.getenv("CLIENT_ID")
-REDIRECT_URI = quote("https://" + os.getenv("REDIRECT_URI", "example.com"))
+REDIRECT_URI = quote("https://" + os.getenv("HOSTNAME", ""))
 
 TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY")
 TURNSTILE_SITE_SECRET = os.getenv("TURNSTILE_SITE_SECRET")
@@ -73,10 +73,20 @@ async def run_app() -> None:
         None
     """
 
+    ssl = None
+    if not None in [CERT_FILE_PATH, KEY_FILE_PATH]:
+        ssl = {
+            "cert": CERT_FILE_PATH,
+            "key": KEY_FILE_PATH
+        }
+
+    print(HOST)
+
     server = await app.create_server(
         port = PORT,
         host = HOST,
         return_asyncio_server = True,
+        ssl = ssl
     )
 
     if server is None:

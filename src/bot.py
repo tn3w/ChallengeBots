@@ -12,8 +12,8 @@ from discord import app_commands
 from discord.ext import commands
 
 from src.utils import (
-    load_dotenv, generate_secure_string, cache_with_ttl,
-    http_request
+    CURRENT_DIRECTORY_PATH, load_dotenv, generate_secure_string,
+    cache_with_ttl, http_request
 )
 
 
@@ -21,7 +21,7 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-REDIRECT_URI = quote("https://" + os.getenv("REDIRECT_URI", "example.com"))
+REDIRECT_URI = quote("https://" + os.getenv("HOSTNAME", ""))
 
 
 intents = discord.Intents.default()
@@ -122,7 +122,7 @@ async def update_banner() -> None:
         None
     """
 
-    small_image = Image.open("image.png")
+    small_image = Image.open(os.path.join(CURRENT_DIRECTORY_PATH, "src", "assets", "icon.png"))
     small_image = small_image.resize((50, 50), Image.LANCZOS)
 
     while True:

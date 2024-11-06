@@ -7,7 +7,11 @@ import http.client
 import urllib.error
 import urllib.request
 from functools import wraps
-from typing import Optional, Any
+from typing import Final, Optional, Any
+
+
+CURRENT_DIRECTORY_PATH: Final[str] = os.path.dirname(os.path.abspath(__file__)) \
+    .replace("\\", "/").replace("//", "/").replace("src", "").replace("//", "/")
 
 
 def generate_secure_string(length: int):
@@ -42,14 +46,6 @@ def load_dotenv(filepath: str = ".env") -> None:
                 line = line.strip()
                 if line and not line.startswith("#"):
                     key, value = line.split("=", 1)
-
-                    if value.isdigit():
-                        value = int(value)
-                    else:
-                        value = [
-                            item.strip()
-                            for item in value.split(",")
-                        ] if "," in value else value.strip()
 
                     os.environ[key.strip()] = value
 
