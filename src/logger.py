@@ -195,7 +195,7 @@ def _execute_log(message: str, *args, level: int = 1, exception: Optional[str] =
     formatted_timestamp = datetime.fromtimestamp(current_ns_time / 1e9)\
         .strftime("%Y-%m-%d %H:%M:%S.%f") + str(current_ns_time)[-3:]
 
-    full_message = "[flask_Captchaify " + LOG_LEVELS.get(level, "INFO") + " at "\
+    full_message = "[ChallengeBots " + LOG_LEVELS.get(level, "INFO") + " at "\
         + formatted_timestamp + "] " + str(message)
 
     for arg in args:
