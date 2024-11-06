@@ -11,7 +11,7 @@ from PIL import Image
 from discord import app_commands
 from discord.ext import commands
 
-from utils import (
+from src.utils import (
     load_dotenv, generate_secure_string, cache_with_ttl,
     http_request
 )
@@ -21,7 +21,7 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-REDIRECT_URI = quote("https://" + os.getenv("REDIRECT_URI") + "/verify")
+REDIRECT_URI = quote("https://" + os.getenv("REDIRECT_URI", "example.com"))
 
 
 intents = discord.Intents.default()
@@ -106,7 +106,7 @@ async def add(interaction: discord.Interaction, role: discord.Role) -> None:
         label = "Verify",
         url = (
             f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}"
-            f"&redirect_uri={REDIRECT_URI}&response_type=code&scope=identify&state={state}"
+            f"&redirect_uri={REDIRECT_URI}%2Fverify&response_type=code&scope=identify&state={state}"
         )
     )
     view.add_item(button)

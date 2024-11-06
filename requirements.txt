@@ -3,3 +3,4 @@ asyncio
 pillow
 uvloop
 sanic
+jinja2
