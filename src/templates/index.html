@@ -7,9 +7,12 @@
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' https://challenges.cloudflare.com/turnstile/v0/api.js; frame-src 'self' https://challenges.cloudflare.com/; img-src data: https://cdn.discordapp.com/embed/avatars/ https://cdn.discordapp.com/avatars/;">
         <style>
             :root {
-                --background: #b8b7e9;
-                --box-background: #677de0;
-                --text: #181818;
+                --background: #f2f2f2;
+                --box-background: #cfc7e9;
+                --text: #0a101a;
+                --hero-background: 
+                    radial-gradient(circle at top left, rgba(255, 255, 255, 0.4), rgba(230, 230, 230, 0.9) 60%),
+                    radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.4), rgba(230, 230, 230, 0.9) 60%);
             }
 
             @media (prefers-color-scheme: dark) {
@@ -17,6 +20,9 @@
                     --background: #0a101a;
                     --box-background: #33303d;
                     --text: #f2f2f2;
+                    --hero-background:
+                        radial-gradient(circle at top left, rgba(255, 255, 255, 0.1), rgba(13, 17, 23, 0.9) 60%),
+                        radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.1), rgba(13, 17, 23, 0.9) 60%);
                 }
             }
 
@@ -34,9 +40,7 @@
             }
 
             .hero {
-                background-image: 
-                    radial-gradient(circle at top left, rgba(255, 255, 255, 0.1), rgba(13, 17, 23, 0.9) 60%),
-                    radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.1), rgba(13, 17, 23, 0.9) 60%);
+                background-image: var(--hero-background);
                 background-size: cover;
                 padding: 20px;
                 width: 100%;

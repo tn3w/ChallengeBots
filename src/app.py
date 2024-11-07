@@ -190,13 +190,13 @@ def create_session(user: User, access_token: str) -> str:
     return session_token
 
 
-def get_session(session_token: str) -> Tuple[User, str]:
+def get_session(session_token: str) -> Tuple[Optional[User], Optional[str]]:
     try:
         decrypted_session_token = SESSION_AES.decrypt(session_token).decode("utf-8")
         user_id, access_token = decrypted_session_token.split("/", 1)
     except Exception as exc:
         log(exc, level = 4)
-        return None
+        return (None, None)
 
     sessions = get_database("sessions", 604800) # 7 days
     encrypted_user_info = sessions[user_id]
@@ -208,7 +208,7 @@ def get_session(session_token: str) -> Tuple[User, str]:
         loaded_user_info = pickle.loads(decrypted_user_info)
     except Exception as exc:
         log(exc, level = 4)
-        return None
+        return (None, None)
 
     user = User(loaded_user_info)
 
@@ -335,7 +335,12 @@ async def callback(request: Request) -> HTTPResponse:
     if not session_token or not 100 < len(session_token) < 150:
         return text("Error") # FIXME
 
+    print(session_token)
+
     user = get_session(session_token)[0]
+
+    if not user:
+        return text("Error")
 
     state = request.form.get("state")
     if len(state) != 20:
