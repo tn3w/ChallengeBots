@@ -1,23 +1,24 @@
 import os
-import pickle
+from typing import Optional
 from urllib.parse import quote
-from typing import Optional, Tuple
 from datetime import datetime, timezone, timedelta
 
 import asyncio
 
-from sanic import Sanic, Request, HTTPResponse
-from sanic.response import text, html, redirect
+from sanic.response import html, redirect
+from sanic import Sanic, Request, HTTPResponse, SanicException
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from src.bot import has_role, verify_user
-
 from src.logger import log
-from src.crypto.symmetric import AES256
+from src.bot import has_role, verify_user
+from src.files import CURRENT_DIRECTORY_PATH
+from src.utils import load_dotenv, http_request
+from src.sanic_errors import ERROR_INFOS, handle_all_errors
 from src.database import get_database, get_database_decrypted
-from src.utils import load_dotenv, generate_secure_string, http_request
-from src.files import CURRENT_DIRECTORY_PATH, DATA_DIRECTORY_PATH, write, read
-from src.discordauth import User, is_valid_oauth_code, get_access_token, get_user_info
+from src.discordauth import (
+    User, is_valid_oauth_code, get_access_token, get_user_info,
+    create_session, get_session
+)
 
 
 load_dotenv()
@@ -36,21 +37,53 @@ QUOTED_REDIRECT_URI = quote(REDIRECT_URI)
 TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY")
 TURNSTILE_SITE_SECRET = os.getenv("TURNSTILE_SITE_SECRET")
 
-SESSION_KEY_FILE_PATH = os.path.join(DATA_DIRECTORY_PATH, "session.key")
-
-SESSION_KEY = None
-if os.path.join(SESSION_KEY_FILE_PATH):
-    session_key_content = read(SESSION_KEY_FILE_PATH)
-    if session_key_content and len(session_key_content) != 36:
-        SESSION_KEY = session_key_content
-
-if SESSION_KEY is None:
-    SESSION_KEY = generate_secure_string(36)
-    write(SESSION_KEY, SESSION_KEY_FILE_PATH, as_thread = True)
-
-SESSION_AES = AES256(SESSION_KEY, serialization = "base62")
-
 app = Sanic("ChallengeBots")
+
+
+def render_error(title: str, description: str, code: int = 400) -> str:
+    """
+    Renders the error template with the specified title, description, and HTTP error code.
+
+    Args:
+        title (str): The title of the error to display in the rendered template.
+        description (str): A detailed description of the error for the user.
+        code (int, optional): The HTTP error code to display. Defaults to 400.
+
+    Returns:
+        str: The rendered HTML string of the error template.
+    """
+
+    return render_template(
+        "error", title = title,
+        description = description,
+        code = str(code)
+    )
+
+
+def handle_error(_: Request, exception: SanicException) -> HTTPResponse:
+    """
+    Handles errors by rendering an appropriate error page based on the exception's status code.
+
+    Args:
+        _ (Request): The Sanic request object. Unused in this function.
+        exception (SanicException): The exception raised, containing the status code to be handled.
+
+    Returns:
+        HTTPResponse: An HTML response displaying the error page with a title, description,
+                      and code based on the exception details.
+    """
+
+    error_info = ERROR_INFOS.get(exception.status_code, {
+        "code": 400,
+        "title": "Something happened",
+        "description": ("Like a black hole that irrevocably devours "
+                        "data and processes and leaves no answers behind.")
+    })
+
+    return html(render_error(**error_info))
+
+
+handle_all_errors(app, handle_error)
 
 
 def render_template(template_name: str, **context) -> str:
@@ -115,7 +148,7 @@ def render_login_redirect(state: Optional[str] = None) -> HTTPResponse:
     """
 
     if state == "err":
-        return text("Error") # FIXME
+        return render_error("Forbidden", "The client is in an error state.", 403)
 
     if not state:
         state = "err"
@@ -178,44 +211,19 @@ async def index(_: Request) -> HTTPResponse:
     return html(template)
 
 
-def create_session(user: User, access_token: str) -> str:
-    user_info = user.user_info
-    dumped_user_info = pickle.dumps(user_info)
-    encrypted_user_info = AES256(access_token, serialization = "bytes").encrypt(dumped_user_info)
-
-    sessions = get_database("sessions", 604800) # 7 days
-    sessions[str(user.user_id)] = encrypted_user_info
-
-    session_token = SESSION_AES.encrypt(str(user.user_id) + "/" + access_token)
-    return session_token
-
-
-def get_session(session_token: str) -> Tuple[Optional[User], Optional[str]]:
-    try:
-        decrypted_session_token = SESSION_AES.decrypt(session_token).decode("utf-8")
-        user_id, access_token = decrypted_session_token.split("/", 1)
-    except Exception as exc:
-        log(exc, level = 4)
-        return (None, None)
-
-    sessions = get_database("sessions", 604800) # 7 days
-    encrypted_user_info = sessions[user_id]
-    try:
-        decrypted_user_info = AES256(
-            access_token, serialization = "bytes"
-        ).decrypt(encrypted_user_info)
-
-        loaded_user_info = pickle.loads(decrypted_user_info)
-    except Exception as exc:
-        log(exc, level = 4)
-        return (None, None)
-
-    user = User(loaded_user_info)
-
-    return user, access_token
-
-
 def verify_turnstile(turnstile_response: str, turnstile_site_secret: str) -> bool:
+    """
+    Verifies the user's identity using Cloudflare's Turnstile CAPTCHA verification.
+
+    Args:
+        turnstile_response (str): The CAPTCHA response token from the user's submission.
+        turnstile_site_secret (str): The secret key used to authenticate with
+            the Turnstile API.
+
+    Returns:
+        bool: True if the CAPTCHA verification is successful, False otherwise.
+    """
+
     data = {
         "secret": turnstile_site_secret,
         "response": turnstile_response
@@ -293,7 +301,7 @@ async def login_or_verify(request: Request) -> HTTPResponse:
         return set_cookie(redirect("/dashboard"))
 
     if state == "err":
-        return set_cookie(text("Error")) # FIXME
+        return set_cookie(render_error("Forbidden", "The client is in an error state.", 403))
 
     if len(state) != 20:
         return set_cookie(html(render_callback(user, "Invalid or expired session."), 400))
@@ -325,6 +333,18 @@ async def login_or_verify(request: Request) -> HTTPResponse:
 
 @app.route("/callback", methods=["GET", "POST"])
 async def callback(request: Request) -> HTTPResponse:
+    """
+    Processes the callback for role verification after the initial authentication process.
+
+    Args:
+        request (Request): The incoming HTTP request object containing form data,
+            cookies, and session information.
+
+    Returns:
+        HTTPResponse: An HTTP response object that confirms the verification process outcome,
+            either completing the process or returning an error if validation fails.
+    """
+
     if request.method.lower() == "get":
         return redirect("/")
 
@@ -333,23 +353,21 @@ async def callback(request: Request) -> HTTPResponse:
         session_token = request.cookies.get("session")
 
     if not session_token or not 100 < len(session_token) < 150:
-        return text("Error") # FIXME
-
-    print(session_token)
+        return render_error("Unauthorized", "The current session is invalid.", 401)
 
     user = get_session(session_token)[0]
 
     if not user:
-        return text("Error")
+        return render_error("Unauthorized", "The current session is invalid.", 401)
 
     state = request.form.get("state")
     if len(state) != 20:
-        return html(render_callback(user, "Invalid or expired session."), 400)
+        return html(render_callback(user, "Invalid or expired state."), 400)
 
     states = get_database_decrypted("states", None)
     state_data = states.get(state)
     if not state_data:
-        return html(render_callback(user, "Invalid or expired session."), 400)
+        return html(render_callback(user, "Invalid or expired state."), 400)
 
     guild_id, role_id = state_data
 
