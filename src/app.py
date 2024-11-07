@@ -234,8 +234,6 @@ async def index(_: Request) -> HTTPResponse:
         HTTPResponse: The HTML response containing the rendered "index" template.
     """
 
-
-
     template = render_template(
         "index", client_id = CLIENT_ID,
         redirect_uri = QUOTED_REDIRECT_URI,
