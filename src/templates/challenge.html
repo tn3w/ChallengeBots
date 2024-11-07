@@ -64,7 +64,7 @@
     <body>
         <img class="profile-image" src="{{ avatar_url }}"></div>
         <div class="user-info">{{ user_name }}{% if discriminator != 0 %}#{{ discriminator }}{% endif %}</div>
-        <form id="captchaForm" action="/verified" method="post">
+        <form id="captchaForm" action="/callback" method="post">
             <input type="hidden" name="state" value="{{ state }}">
             <input type="hidden" name="session" value="{{ session }}">
             <div id="captchaContainer" class="cf-turnstile" data-sitekey="{{ cf_turnstile_site_key }}" data-callback="onSuccess"></div>

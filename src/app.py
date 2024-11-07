@@ -1,7 +1,8 @@
 import os
 import pickle
-from typing import Optional
 from urllib.parse import quote
+from typing import Optional, Tuple
+from datetime import datetime, timezone, timedelta
 
 import asyncio
 
@@ -11,9 +12,10 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from src.bot import has_role, verify_user
 
+from src.logger import log
 from src.crypto.symmetric import AES256
-from src.utils import load_dotenv, generate_secure_string
 from src.database import get_database, get_database_decrypted
+from src.utils import load_dotenv, generate_secure_string, http_request
 from src.files import CURRENT_DIRECTORY_PATH, DATA_DIRECTORY_PATH, write, read
 from src.discordauth import User, is_valid_oauth_code, get_access_token, get_user_info
 
@@ -21,12 +23,14 @@ from src.discordauth import User, is_valid_oauth_code, get_access_token, get_use
 load_dotenv()
 PORT = os.getenv("PORT")
 HOST = os.getenv("HOST")
+HOSTNAME = os.getenv("HOSTNAME", "")
+
 CERT_FILE_PATH = os.getenv("CERT_FILE_PATH")
 KEY_FILE_PATH = os.getenv("KEY_FILE_PATH")
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-REDIRECT_URI = "https://" + os.getenv("HOSTNAME", "")
+REDIRECT_URI = "https://" + HOSTNAME
 QUOTED_REDIRECT_URI = quote(REDIRECT_URI)
 
 TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY")
@@ -76,7 +80,7 @@ def render_template(template_name: str, **context) -> str:
     return template.render(**context)
 
 
-def render_verified(user: User, error: Optional[str] = None) -> str:
+def render_callback(user: User, error: Optional[str] = None) -> str:
     """
     Renders the verified template with the provided user information.
 
@@ -91,13 +95,13 @@ def render_verified(user: User, error: Optional[str] = None) -> str:
     """
 
     return render_template(
-        "verified", avatar_url = user.avatar_url,
+        "callback", avatar_url = user.avatar_url,
         user_name = user.user_name, discriminator = user.discriminator,
         error = error
     )
 
 
-def render_login_redirect(state: Optional[str] = None, path: Optional[str] = None) -> HTTPResponse:
+def render_login_redirect(state: Optional[str] = None) -> HTTPResponse:
     """
     Generates a redirect response to initiate the Discord OAuth2 login process.
 
@@ -111,19 +115,15 @@ def render_login_redirect(state: Optional[str] = None, path: Optional[str] = Non
     """
 
     if state == "err":
-        return text("Error")#render_template("error", )
-
-    path = path or "/login"
-
-    url = (
-        f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&redirect_uri=" +
-        QUOTED_REDIRECT_URI + f"{quote(path)}&response_type=code&scope=guilds+identify"
-    )
+        return text("Error") # FIXME
 
     if not state:
         state = "err"
 
-    url += "&state=" + state
+    url = (
+        f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&redirect_uri=" +
+        QUOTED_REDIRECT_URI + "%2Fauth&response_type=code&scope=guilds+identify&state=" + state
+    )
     return redirect(url)
 
 
@@ -178,11 +178,83 @@ async def index(_: Request) -> HTTPResponse:
     return html(template)
 
 
-@app.route("/login", methods=["GET", "POST"], name="login_route")
-@app.route("/verify", methods=["GET", "POST"], name="verify_route")
+def create_session(user: User, access_token: str) -> str:
+    user_info = user.user_info
+    dumped_user_info = pickle.dumps(user_info)
+    encrypted_user_info = AES256(access_token, serialization = "bytes").encrypt(dumped_user_info)
+
+    sessions = get_database("sessions", 604800) # 7 days
+    sessions[str(user.user_id)] = encrypted_user_info
+
+    session_token = SESSION_AES.encrypt(str(user.user_id) + "/" + access_token)
+    return session_token
+
+
+def get_session(session_token: str) -> Tuple[User, str]:
+    try:
+        decrypted_session_token = SESSION_AES.decrypt(session_token).decode("utf-8")
+        user_id, access_token = decrypted_session_token.split("/", 1)
+    except Exception as exc:
+        log(exc, level = 4)
+        return None
+
+    sessions = get_database("sessions", 604800) # 7 days
+    encrypted_user_info = sessions[user_id]
+    try:
+        decrypted_user_info = AES256(
+            access_token, serialization = "bytes"
+        ).decrypt(encrypted_user_info)
+
+        loaded_user_info = pickle.loads(decrypted_user_info)
+    except Exception as exc:
+        log(exc, level = 4)
+        return None
+
+    user = User(loaded_user_info)
+
+    return user, access_token
+
+
+def verify_turnstile(turnstile_response: str, turnstile_site_secret: str) -> bool:
+    data = {
+        "secret": turnstile_site_secret,
+        "response": turnstile_response
+    }
+
+    url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+    response = http_request(url, "POST", is_json = True, data = data)
+
+    if not response or not isinstance(response, dict):
+        return False
+
+    if not response.get("hostname", HOSTNAME) == HOSTNAME:
+        return False
+
+    if not response.get("success", False):
+        return False
+
+    timestamp_str = response.get('challenge_ts', None)
+
+    try:
+        challenge_time = datetime.strptime(timestamp_str, '%Y-%m-%dT%H:%M:%S.%fZ')
+    except Exception as exception:
+        log(exception, level = 4)
+        return False
+
+    if challenge_time.tzinfo is None:
+        challenge_time = challenge_time.replace(tzinfo=timezone.utc)
+
+    current_time = datetime.now(timezone.utc)
+    if current_time - challenge_time > timedelta(minutes = 5):
+        return False
+
+    return response.get("success", False)
+
+
+@app.route("/auth", methods=["GET", "POST"])
 async def login_or_verify(request: Request) -> HTTPResponse:
     """
-    Handles the login and verification process for users.
+    Handles the authentication process for users.
 
     Args:
         request (Request): The incoming HTTP request object containing query parameters
@@ -197,63 +269,97 @@ async def login_or_verify(request: Request) -> HTTPResponse:
     code = request.args.get("code")
     state = request.args.get("state")
 
-    current_path = "/login" if request.path.startswith("/login") else "/verify"
     if not code or not is_valid_oauth_code(code):
-        return render_login_redirect(state, current_path)
+        return render_login_redirect(state)
 
     access_token = get_access_token(
         CLIENT_ID, CLIENT_SECRET,
-        REDIRECT_URI + current_path, code
+        REDIRECT_URI + "/auth", code
     )
 
     if not access_token:
-        return render_login_redirect(state, current_path)
+        return render_login_redirect(state)
 
     user = get_user_info(access_token)
     if user is None:
-        return render_login_redirect(state, current_path)
+        return render_login_redirect(state)
 
-    user_info = user.user_info
-    dumped_user_info = pickle.dumps(user_info)
-    encrypted_user_info = AES256(access_token, serialization = "bytes").encrypt(dumped_user_info)
-
-    sessions = get_database("sessions", 604800) # 7 days
-    sessions[str(user.user_id)] = encrypted_user_info
-
-    session_token = SESSION_AES.encrypt(str(user.user_id) + access_token)
+    session_token = create_session(user, access_token)
 
     def set_cookie(response: HTTPResponse) -> HTTPResponse:
         return response_set_cookies(request, response, {"session": session_token})
 
-    if current_path == "/login":
+    if not state:
         return set_cookie(redirect("/dashboard"))
 
-    if not state or state == "err" or len(state) != 20:
-        return set_cookie(html(render_verified(user, "Invalid or expired session."), 400))
+    if state == "err":
+        return set_cookie(text("Error")) # FIXME
+
+    if len(state) != 20:
+        return set_cookie(html(render_callback(user, "Invalid or expired session."), 400))
 
     states = get_database_decrypted("states", None)
     state_data = states.get(state)
     if not state_data:
-        return set_cookie(html(render_verified(user, "Invalid or expired session."), 400))
+        return set_cookie(html(render_callback(user, "Invalid or expired session."), 400))
 
     guild_id, role_id = state_data
     if has_role(role_id, guild_id, user.user_id):
-        return set_cookie(html(render_verified(user)))
+        return set_cookie(html(render_callback(user)))
 
     verified_users = get_database("verified_users", 1200)
 
-    if verified_users.exists(user.user_id):
+    if verified_users.exists(str(user.user_id)):
         is_verified = verify_user(guild_id, role_id, user, True)
         if not is_verified:
-            return set_cookie(html(render_verified(user, "Failed to assign role."), 400))
+            return set_cookie(html(render_callback(user, "Failed to assign role."), 400))
 
-        return set_cookie(html(render_verified(user)))
+        return set_cookie(html(render_callback(user)))
 
     return set_cookie(html(render_template(
         "challenge", avatar_url = user.avatar_url, user_name = user.user_name,
         discriminator = user.discriminator, state = state, session = session_token,
         cf_turnstile_site_key = TURNSTILE_SITE_KEY
     )))
+
+
+@app.route("/callback", methods=["GET", "POST"])
+async def callback(request: Request) -> HTTPResponse:
+    if request.method.lower() == "get":
+        return redirect("/")
+
+    session_token = request.form.get("session")
+    if session_token is None:
+        session_token = request.cookies.get("session")
+
+    if not session_token or not 100 < len(session_token) < 150:
+        return text("Error") # FIXME
+
+    user = get_session(session_token)[0]
+
+    state = request.form.get("state")
+    if len(state) != 20:
+        return html(render_callback(user, "Invalid or expired session."), 400)
+
+    states = get_database_decrypted("states", None)
+    state_data = states.get(state)
+    if not state_data:
+        return html(render_callback(user, "Invalid or expired session."), 400)
+
+    guild_id, role_id = state_data
+
+    turnstile_response = request.form.get("cf-turnstile-response")
+    if not verify_turnstile(turnstile_response, TURNSTILE_SITE_SECRET):
+        return html(render_callback(user, "Verification of human identity failed."), 400)
+
+    verified_users = get_database("verified_users", 1200)
+    verified_users[str(user.user_id)] = None
+
+    is_verified = verify_user(guild_id, role_id, user)
+    if not is_verified:
+        return html(render_callback(user, "Role assignment failed."), 400)
+
+    return html(render_callback(user))
 
 
 async def run_app() -> None:

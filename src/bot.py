@@ -83,9 +83,6 @@ def verify_user(guild_id: int, role_id: int, user: User, was_verified: bool = Fa
               False if the verification process failed.
     """
 
-    verified_users = get_database("verified_users", 1200)
-    verified_users[user.user_id] = None
-
     guild = bot.get_guild(guild_id)
     if guild:
         role = guild.get_role(role_id)
@@ -176,8 +173,8 @@ async def add(interaction: discord.Interaction, role: discord.Role) -> None:
     button = discord.ui.Button(
         label = "Verify",
         url = (
-            f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}"
-            f"&redirect_uri={REDIRECT_URI}%2Fverify&response_type=code&scope=identify&state={state}"
+            f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&redirect_uri="
+            f"{REDIRECT_URI}%2Fauth&response_type=code&scope=identify&state={state}"
         )
     )
     view.add_item(button)

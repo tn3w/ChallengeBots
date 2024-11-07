@@ -8,6 +8,9 @@ import urllib.error
 import urllib.request
 from functools import wraps
 from typing import Optional, Any
+from urllib.parse import urlencode
+
+from src.files import CURRENT_DIRECTORY_PATH, read
 
 
 def generate_secure_string(length: int):
@@ -28,27 +31,23 @@ def generate_secure_string(length: int):
     )
 
 
-def load_dotenv(filepath: str = ".env") -> None:
+def load_dotenv(file_name: str = ".env") -> None:
     """
     Load environment variables from a .env file into the system environment.
 
     Args:
-        filepath (str): Path to the .env file. Defaults to ".env" in the current directory.
+        file_name (str): Name of the env file. Defaults to ".env" in the current directory.
     """
 
-    try:
-        with open(filepath, "r", encoding = "utf-8") as file:
-            for line in file:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    key, value = line.split("=", 1)
+    file_path = os.path.join(CURRENT_DIRECTORY_PATH, file_name)
+    dotenv_content: str = read(file_path, default = "")
 
-                    os.environ[key.strip()] = value
+    for line in dotenv_content.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            key, value = line.split("=", 1)
 
-    except FileNotFoundError:
-        print(f"Warning: {filepath} file not found.")
-    except ValueError:
-        print(f"Warning: {filepath} has an invalid format.")
+            os.environ[key.strip()] = value
 
 
 def cache_with_ttl(ttl: int) -> callable:
@@ -107,7 +106,7 @@ def cache_with_ttl(ttl: int) -> callable:
 
 def http_request(url: str, method: str = "GET", timeout: int = 2,
                  is_json: bool = False, default: Optional[Any] = None,
-                 headers: Optional[dict] = None, data: Optional[bytes] = None) -> Optional[Any]:
+                 headers: Optional[dict] = None, data: Optional[dict] = None) -> Optional[Any]:
     """
     Sends an HTTP request to the specified URL and returns the response content.
 
@@ -124,7 +123,7 @@ def http_request(url: str, method: str = "GET", timeout: int = 2,
             exception occurs during the request.
         headers (Optional[dict], optional): Additional headers to include 
             in the request.
-        data (Optional[bytes], optional): The data to send in the request body. 
+        data (Optional[dict], optional): The data to send in the request body. 
 
     Returns:
         Optional[Any]: The response content, either as a parsed JSON 
@@ -139,6 +138,9 @@ def http_request(url: str, method: str = "GET", timeout: int = 2,
 
     if headers:
         default_headers.update(headers)
+
+    if data:
+        data = urlencode(data).encode('utf-8')
 
     try:
         req = urllib.request.Request(

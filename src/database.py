@@ -129,11 +129,22 @@ class DatabaseInterface(dict):
         if not self.ttl:
             return data
 
-        return {
-            key: (value, timestamp)
-            for key, (value, timestamp) in data.items()
-            if current_time - timestamp <= self.ttl
-        }
+        def is_still_valid(timestamp: int) -> bool:
+            return current_time - timestamp <= self.ttl
+
+        cleaned_data = {}
+        for key, data_tuple in data.items():
+            if isinstance(data_tuple, int):
+                if is_still_valid(data_tuple):
+                    cleaned_data[key] = data_tuple
+
+                continue
+
+            value, timestamp = data_tuple
+            if is_still_valid(timestamp):
+                cleaned_data[key] = (value, timestamp)
+
+        return cleaned_data
 
 
 class Database(DatabaseInterface):

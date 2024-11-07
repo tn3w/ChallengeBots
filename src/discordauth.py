@@ -46,20 +46,19 @@ def get_access_token(client_id: str, client_secret: str,
         "code": code,
         "redirect_uri": redirect_uri
     }
-    urlencoded_data = urlencode(data).encode('utf-8')
 
     url = "https://discord.com/api/oauth2/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
-    data = http_request(
+    response = http_request(
         url, "POST", is_json = True,
-        headers = headers, data = urlencoded_data
+        headers = headers, data = data
     )
 
-    if not data or not isinstance(data, dict):
+    if not response or not isinstance(response, dict):
         return None
 
-    return data.get("access_token")
+    return response.get("access_token")
 
 
 def get_user_info(access_token: str) -> Optional["User"]:
@@ -76,12 +75,12 @@ def get_user_info(access_token: str) -> Optional["User"]:
     url = "https://discord.com/api/users/@me"
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    data = http_request(url, is_json = True, headers = headers)
+    response = http_request(url, is_json = True, headers = headers)
 
-    if not data or not isinstance(data, dict):
+    if not response or not isinstance(response, dict):
         return None
 
-    return User(data)
+    return User(response)
 
 
 class User:
