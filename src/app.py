@@ -1,7 +1,7 @@
 import os
 from typing import Optional
-from urllib.parse import quote
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlunparse, urlparse, quote
 
 import asyncio
 
@@ -25,6 +25,7 @@ load_dotenv()
 PORT = os.getenv("PORT")
 HOST = os.getenv("HOST")
 HOSTNAME = os.getenv("HOSTNAME", "")
+LONG_HOSTNAME = os.getenv("LONG_HOSTNAME")
 
 CERT_FILE_PATH = os.getenv("CERT_FILE_PATH")
 KEY_FILE_PATH = os.getenv("KEY_FILE_PATH")
@@ -189,6 +190,37 @@ def response_set_cookies(request: Request, response: HTTPResponse, cookies: dict
     return response
 
 
+if LONG_HOSTNAME is not None:
+    @app.middleware("request")
+    async def redirect_to_long_hostname(request: Request):
+        """
+        Middleware that redirects requests to a specified long hostname if the request
+        path is not '/auth' or '/callback' and the current hostname is different from
+        the specified LONG_HOSTNAME.
+
+        Args:
+            request (Request): The incoming HTTP request.
+
+        Returns:
+            HTTPResponse: A redirect response to the new URL with the long hostname
+                if the conditions are met; otherwise, the request proceeds normally.
+        """
+
+        current_url = request.url
+        parsed_url = urlparse(current_url)
+        current_hostname = parsed_url.hostname
+        path = parsed_url.path
+        query = parsed_url.query
+        fragment = parsed_url.fragment
+
+        if path not in ["/auth", "/callback"] and current_hostname != LONG_HOSTNAME:
+
+            new_url = urlunparse(
+                ("https", LONG_HOSTNAME, path, "", query, fragment)
+            )
+            return redirect(new_url)
+
+
 @app.route("/", methods = ["GET", "POST"])
 async def index(_: Request) -> HTTPResponse:
     """
@@ -201,6 +233,8 @@ async def index(_: Request) -> HTTPResponse:
     Returns:
         HTTPResponse: The HTML response containing the rendered "index" template.
     """
+
+
 
     template = render_template(
         "index", client_id = CLIENT_ID,

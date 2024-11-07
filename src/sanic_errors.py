@@ -161,7 +161,6 @@ ERROR_INFOS: Final[dict] = {
     }
 }
 
-
 ERROR_CLASSES: Final[list] = [
     BadRequest, Unauthorized,
     Forbidden, NotFound,
