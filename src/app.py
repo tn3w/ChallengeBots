@@ -41,7 +41,7 @@ TURNSTILE_SITE_SECRET = os.getenv("TURNSTILE_SITE_SECRET")
 app = Sanic("ChallengeBots")
 
 
-def render_error(title: str, description: str, code: int = 400) -> str:
+def render_error(title: str, description: str, code: int = 404) -> str:
     """
     Renders the error template with the specified title, description, and HTTP error code.
 

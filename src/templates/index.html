@@ -121,6 +121,76 @@
                 font-weight: bold;
                 margin-bottom: 20px;
             }
+
+            .captcha {
+                height: 65px;
+            }
+
+            @media (max-width: 865px) {
+                main {
+                    padding: 30px;
+                }
+
+                .header {
+                    padding: 30px;
+                }
+            }
+
+            @media (max-width: 768px) {
+                main {
+                    flex-direction: column;
+                }
+
+                .right {
+                    width: 100%;
+                    margin-left: 0;
+                    margin-top: 40px;
+                }
+
+                .btn {
+                    padding: 8px 16px;
+                    font-size: 1rem;
+                }
+
+                .left h1 {
+                    font-size: 1.8rem;
+                }
+
+                .left p {
+                    font-size: 1rem;
+                }
+            }
+
+            @media (max-width: 480px) {
+                .header {
+                    padding: 20px;
+                }
+
+                main {
+                    padding: 20px;
+                }
+
+                .left h1 {
+                    font-size: 1.6rem;
+                }
+
+                .left p {
+                    font-size: 0.9rem;
+                }
+
+                .right {
+                    padding: 15px;
+                }
+
+                .profile-image {
+                    width: 60px;
+                    height: 60px;
+                }
+
+                .user-info {
+                    font-size: 1rem;
+                }
+            }
         </style>
         <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     </head>
@@ -145,7 +215,7 @@
                 <div class="right">
                     <img class="profile-image" src="https://cdn.discordapp.com/embed/avatars/0.png">
                     <div class="user-info">coolbro_</div>
-                    <div id="captchaContainer" class="cf-turnstile" data-sitekey="{{ cf_turnstile_site_key }}"></div>
+                    <div class="captcha cf-turnstile" data-sitekey="{{ cf_turnstile_site_key }}"></div>
                 </div>
             </main>
         </section>
