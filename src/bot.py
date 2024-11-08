@@ -165,6 +165,12 @@ async def add(interaction: discord.Interaction, role: discord.Role) -> None:
         )
         return
 
+    if role == interaction.guild.default_role:
+        await interaction.response.send_message(
+            "The @everyone role is not permitted.", ephemeral=True
+        )
+        return
+
     states = get_database_decrypted("states", None)
 
     state = None
@@ -277,7 +283,7 @@ async def on_ready() -> None:
     try:
         synced = await bot.tree.sync()
         log(f"Synced {len(synced)} commands.")
-    except Exception as e:
+    except Exception:
         log("Error syncing commands.", level = 4)
 
 

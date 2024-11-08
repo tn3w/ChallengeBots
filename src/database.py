@@ -9,7 +9,7 @@ from src.files import PICKLE, DATA_DIRECTORY_PATH, delete
 
 
 SHA: Final[SHA256] = SHA256(1000, salt_length = 8)
-CUSTOM_EPOCH_OFFSET = int(time.mktime((2020, 1, 1, 0, 0, 0, 0, 0, 0)))
+CUSTOM_EPOCH_OFFSET = int(time.mktime((2024, 1, 1, 0, 0, 0, 0, 0, 0)))
 
 DATABASES: Dict[str, Tuple["Database", "DatabaseDecrypted"]] = {}
 
@@ -69,7 +69,7 @@ def get_time() -> int:
         int: The current time in seconds from the 2010 epoch.
     """
 
-    return int(time.time() - CUSTOM_EPOCH_OFFSET)
+    return int(int(time.time()) - CUSTOM_EPOCH_OFFSET)
 
 
 class DatabaseInterface(dict):
@@ -130,6 +130,11 @@ class DatabaseInterface(dict):
             return data
 
         def is_still_valid(timestamp: int) -> bool:
+            duration = current_time - timestamp
+
+            if duration < 0:
+                return False
+
             return current_time - timestamp <= self.ttl
 
         cleaned_data = {}
