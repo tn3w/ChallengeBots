@@ -14,7 +14,7 @@ from discord.ext import commands
 from src.logger import log
 from src.discordauth import User
 from src.files import CURRENT_DIRECTORY_PATH
-from src.database import get_database, get_database_decrypted
+from src.database import get_database_decrypted
 from src.utils import (
     load_dotenv, generate_secure_string, cache_with_ttl,
     http_request
@@ -98,7 +98,20 @@ def verify_user(guild_id: int, role_id: int, user: User, was_verified: bool = Fa
     return False
 
 
-@cache_with_ttl(20)
+@cache_with_ttl(10)
+async def guilds() -> int:
+    """
+    Returns the approximate number of guilds the bot is
+    currently in, with a cache TTL of 10 seconds.
+
+    Returns:
+        int: The number of guilds the bot is currently in.
+    """
+
+    return len(bot.guilds)
+
+
+@cache_with_ttl(5)
 async def check_latency() -> int:
     """
     Measures the latency of a request to the Discord API.
@@ -126,7 +139,7 @@ async def ping(interaction: discord.Interaction) -> None:
         None: Sends a message with the bot's API latency in milliseconds.
     """
 
-    api_latency = check_latency()
+    api_latency = await check_latency()
 
     await interaction.response.send_message(f"**🏓 Pong!**\nAPI: {api_latency}ms")
 

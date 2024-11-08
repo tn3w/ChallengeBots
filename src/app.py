@@ -10,9 +10,9 @@ from sanic import Sanic, Request, HTTPResponse, SanicException
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from src.logger import log
-from src.bot import has_role, verify_user
 from src.files import CURRENT_DIRECTORY_PATH
 from src.utils import load_dotenv, http_request
+from src.bot import has_role, verify_user, guilds
 from src.sanic_errors import ERROR_INFOS, handle_all_errors
 from src.database import get_database, get_database_decrypted
 from src.discordauth import (
@@ -74,7 +74,9 @@ def handle_error(_: Request, exception: SanicException) -> HTTPResponse:
                       and code based on the exception details.
     """
 
-    error_info = ERROR_INFOS.get(exception.status_code, {
+    status_code = getattr(exception, "status_code", 400)
+
+    error_info = ERROR_INFOS.get(status_code, {
         "code": 400,
         "title": "Something happened",
         "description": ("Like a black hole that irrevocably devours "
@@ -234,10 +236,13 @@ async def index(_: Request) -> HTTPResponse:
         HTTPResponse: The HTML response containing the rendered "index" template.
     """
 
+
     template = render_template(
         "index", client_id = CLIENT_ID,
         redirect_uri = QUOTED_REDIRECT_URI,
-        cf_turnstile_site_key = TURNSTILE_SITE_KEY
+        cf_turnstile_site_key = TURNSTILE_SITE_KEY,
+        long_hostname = LONG_HOSTNAME or HOSTNAME,
+        guilds = await guilds()
     )
 
     return html(template)

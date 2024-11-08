@@ -7,8 +7,8 @@ import http.client
 import urllib.error
 import urllib.request
 from functools import wraps
-from typing import Optional, Any
 from urllib.parse import urlencode
+from typing import Optional, Callable, Any
 
 from src.files import CURRENT_DIRECTORY_PATH, read
 
@@ -50,32 +50,32 @@ def load_dotenv(file_name: str = ".env") -> None:
             os.environ[key.strip()] = value
 
 
-def cache_with_ttl(ttl: int) -> callable:
+def cache_with_ttl(ttl: int) -> Callable:
     """
-    Caches the result of a function with a given TTL.
+    Caches the result of an asynchronous function with a given TTL.
 
     Args:
         ttl (int): The TTL in seconds.
 
     Returns:
-        callable: The decorated function.
+        Callable: The decorated function.
     """
 
-    def decorator(func: callable) -> callable:
+    def decorator(func: Callable) -> Callable:
         """
         Internal decorator function.
 
         Args:
-            func (callable): The function to decorate.
+            func (Callable): The function to decorate.
 
         Returns:
-            callable: The decorated function.
+            Callable: The decorated function.
         """
 
         cache = {}
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        async def wrapper(*args, **kwargs) -> Any:
             """
             Internal wrapper function.
 
@@ -84,17 +84,20 @@ def cache_with_ttl(ttl: int) -> callable:
                 **kwargs: The keyword arguments to pass to the function.
             """
 
-            key = (args, tuple(kwargs.items()))
+            key = (args, frozenset(kwargs.items()))
             current_time = time.time()
 
+            # Check if result is in cache and not expired
             if key in cache:
                 result, timestamp = cache[key]
                 if current_time - timestamp < ttl:
                     return result
 
+                # If expired, remove from cache
                 del cache[key]
 
-            result = func(*args, **kwargs)
+            # Await the function's result and store it in cache with the current timestamp
+            result = await func(*args, **kwargs)
             cache[key] = (result, current_time)
 
             return result
