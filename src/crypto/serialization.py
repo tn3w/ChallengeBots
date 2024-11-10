@@ -280,7 +280,3 @@ def load_serialization(serialization_type: str) -> Optional[Callable]:
     normalized_type = re.sub(r'[^a-zA-Z0-9]', '', serialization_type)
 
     return SERIALIZATION_TYPES.get(normalized_type, None)
-
-
-if __name__ == "__main__":
-    print("serilization.py: This file is not designed to be executed.")

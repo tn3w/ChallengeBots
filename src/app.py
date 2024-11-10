@@ -5,19 +5,19 @@ from urllib.parse import urlunparse, urlparse, quote
 
 import asyncio
 
-from sanic.response import html, redirect
+from sanic.response import html, redirect, json
 from sanic import Sanic, Request, HTTPResponse, SanicException
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from src.logger import log
 from src.files import CURRENT_DIRECTORY_PATH
 from src.utils import load_dotenv, http_request
-from src.bot import has_role, verify_user, guilds
 from src.sanic_errors import ERROR_INFOS, handle_all_errors
 from src.database import get_database, get_database_decrypted
+from src.bot import has_role, verify_user, guilds, get_oauth_url
 from src.discordauth import (
-    User, is_valid_oauth_code, get_access_token, get_user_info,
-    create_session, get_session
+    User, Guild, is_valid_oauth_code, get_access_token, get_user_info,
+    create_session, get_session, is_session_token_valid, get_user_guilds
 )
 
 
@@ -156,11 +156,7 @@ def render_login_redirect(state: Optional[str] = None) -> HTTPResponse:
     if not state:
         state = "err"
 
-    url = (
-        f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&redirect_uri=" +
-        QUOTED_REDIRECT_URI + "%2Fauth&response_type=code&scope=guilds+identify&state=" + state
-    )
-    return redirect(url)
+    return redirect(get_oauth_url(state))
 
 
 def response_set_cookies(request: Request, response: HTTPResponse, cookies: dict) -> HTTPResponse:
@@ -242,7 +238,7 @@ async def index(_: Request) -> HTTPResponse:
         redirect_uri = QUOTED_REDIRECT_URI,
         cf_turnstile_site_key = TURNSTILE_SITE_KEY,
         long_hostname = LONG_HOSTNAME or HOSTNAME,
-        guilds = await guilds()
+        guilds = len(await guilds())
     )
 
     return html(template)
@@ -296,8 +292,49 @@ def verify_turnstile(turnstile_response: str, turnstile_site_secret: str) -> boo
     return response.get("success", False)
 
 
+@app.route("/dashboard", methods=["GET", "POST"])
+async def dash(request: Request) -> HTTPResponse:
+    state = request.args.get("state")
+
+    set_cookie = False
+
+    session_token = request.cookies.get("session")
+    if session_token is None:
+        session_token = request.args.get("session")
+        set_cookie = True
+
+    def optional_cookie(response: HTTPResponse) -> HTTPResponse:
+        if not set_cookie:
+            return response
+
+        return response_set_cookies(request, response, {"session": session_token})
+
+    if not is_session_token_valid(session_token):
+        return render_login_redirect(state)
+
+    if session_token.endswith("."):
+        return optional_cookie(render_login_redirect(state))
+
+    user, access_token = get_session(session_token)
+
+    if None in [user, access_token]:
+        return optional_cookie(render_login_redirect(state))
+
+    if (guilds := user.guilds) is None:
+        guilds = get_user_guilds(access_token)
+        if guilds is None:
+            return optional_cookie(render_login_redirect(state))
+
+        # Add guilds to session data
+
+    if not isinstance(guilds, list):
+        return optional_cookie(render_login_redirect(state))
+
+    return optional_cookie(json([guild.guild_info for guild in guilds]))
+
+
 @app.route("/auth", methods=["GET", "POST"])
-async def login_or_verify(request: Request) -> HTTPResponse:
+async def auth(request: Request) -> HTTPResponse:
     """
     Handles the authentication process for users.
 
@@ -334,11 +371,10 @@ async def login_or_verify(request: Request) -> HTTPResponse:
     def set_cookie(response: HTTPResponse) -> HTTPResponse:
         return response_set_cookies(request, response, {"session": session_token})
 
-    if not state:
-        return set_cookie(redirect("/dashboard"))
+    if not state or state == "err":
+        return set_cookie(redirect("/dashboard?session=" + str(session_token)))
 
-    if state == "err":
-        return set_cookie(render_error("Forbidden", "The client is in an error state.", 403))
+    session_token += "."
 
     if len(state) != 20:
         return set_cookie(html(render_callback(user, "Invalid or expired session."), 400))
@@ -389,7 +425,7 @@ async def callback(request: Request) -> HTTPResponse:
     if session_token is None:
         session_token = request.cookies.get("session")
 
-    if not session_token or not 100 < len(session_token) < 150:
+    if not is_session_token_valid(session_token):
         return render_error("Unauthorized", "The current session is invalid.", 401)
 
     user = get_session(session_token)[0]

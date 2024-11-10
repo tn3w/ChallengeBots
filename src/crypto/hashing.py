@@ -198,7 +198,3 @@ class SHA512(AlgorythmInterface):
     @property
     def algorythm(self) -> hashes.HashAlgorithm:
         return hashes.SHA3_512()
-
-
-if __name__ == "__main__":
-    print("hashing.py: This file is not designed to be executed.")

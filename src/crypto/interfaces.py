@@ -449,7 +449,3 @@ class SymmetricEncryption:
             pass
 
         return plain_value
-
-
-if __name__ == "__main__":
-    print("interfaces.py: This file is not designed to be executed.")

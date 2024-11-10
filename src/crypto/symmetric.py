@@ -298,7 +298,3 @@ class ChaCha20(SerializedSymmetricEncryption):
 
         plain_value = decryptor.update(cipher_value) + decryptor.finalize()
         return plain_value
-
-
-if __name__ == "__main__":
-    print("symmetric.py: This file is not designed to be executed.")

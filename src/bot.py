@@ -98,6 +98,25 @@ def verify_user(guild_id: int, role_id: int, user: User, was_verified: bool = Fa
     return False
 
 
+def get_oauth_url(state: str, scope: str = "identify+guilds") -> str:
+    """
+    Constructs the OAuth2 authorization URL for Discord.
+
+    Args:
+        state (str): A unique string used to maintain state between the 
+                     request and callback. It is recommended to use a 
+                     random value to prevent CSRF attacks.
+
+    Returns:
+        str: The OAuth2 authorization URL for Discord.
+    """
+
+    return (
+        f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&redirect_uri="
+        f"{REDIRECT_URI}%2Fauth&response_type=code&scope={scope}&state={state}"
+    )
+
+
 @cache_with_ttl(10)
 async def guilds() -> int:
     """
@@ -108,7 +127,7 @@ async def guilds() -> int:
         int: The number of guilds the bot is currently in.
     """
 
-    return len(bot.guilds)
+    return bot.guilds
 
 
 @cache_with_ttl(5)
@@ -189,13 +208,7 @@ async def add(interaction: discord.Interaction, role: discord.Role) -> None:
         color = discord.Color.blue()
     )
     view = discord.ui.View()
-    button = discord.ui.Button(
-        label = "Verify",
-        url = (
-            f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&redirect_uri="
-            f"{REDIRECT_URI}%2Fauth&response_type=code&scope=identify&state={state}"
-        )
-    )
+    button = discord.ui.Button(label = "Verify", url = get_oauth_url(state, "identify"))
     view.add_item(button)
 
     await interaction.response.send_message(embed=embed, view=view)
