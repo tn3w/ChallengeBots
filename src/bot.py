@@ -160,7 +160,7 @@ async def ping(interaction: discord.Interaction) -> None:
 
     api_latency = await check_latency()
 
-    await interaction.response.send_message(f"**🏓 Pong!**\nAPI: {api_latency}ms")
+    await interaction.response.send_message(f"**🏓 Pong!**\nAPI: {api_latency}ms", ephemeral=True)
 
 
 @bot.tree.command(name="add", description="Set up verification for a role")
