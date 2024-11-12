@@ -247,6 +247,7 @@ class User:
                           a default avatar URL is generated.
     """
 
+
     def __init__(self, user_info: dict) -> None:
         """
         Initializes an Discord user.
@@ -287,6 +288,19 @@ class User:
 
 
     def set_guilds(self, guilds: list["Guild"]) -> None:
+        """
+        Sets the guilds associated with the user.
+
+        Args:
+            guilds (list[Guild]): A list of Guild objects representing the guilds
+                to be associated with the user. Each Guild object should contain
+                relevant information about the guild.
+
+        Returns:
+            None: This method does not return a value; it modifies the instance's
+                attributes directly.
+        """
+
         self.guilds = guilds
         self.user_info["guilds"] = [guild.guild_info for guild in guilds]
 
@@ -301,6 +315,7 @@ class Guild:
         avatar_url (str): The URL of the guild's avatar. If no custom avatar is set,
                           a default avatar URL is generated.
     """
+
 
     def __init__(self, guild_info: dict) -> None:
         """
