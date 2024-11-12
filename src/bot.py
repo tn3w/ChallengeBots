@@ -118,7 +118,7 @@ def get_oauth_url(state: str, scope: str = "identify+guilds") -> str:
 
 
 @cache_with_ttl(10)
-async def guilds() -> int:
+async def get_guilds() -> int:
     """
     Returns the approximate number of guilds the bot is
     currently in, with a cache TTL of 10 seconds.

@@ -163,15 +163,32 @@ def create_session(user: "User", access_token: str) -> str:
         str: An encrypted session token representing the user's session.
     """
 
+    set_session(user, access_token)
+
+    session_token = SESSION_AES.encrypt(str(user.user_id) + "/" + access_token)
+    return session_token
+
+
+def set_session(user: "User", access_token: str) -> None:
+    """
+    Encrypts and stores the user session information in the database.
+
+    Args:
+        user (User): The user object containing the user information to be stored.
+        user_id (str): The unique identifier for the user, used as the key in the session store.
+        access_token (str): The access token used for encrypting the user information.
+
+    Returns:
+        None: This function does not return a value.
+    """
+
     user_info = user.user_info
     dumped_user_info = pickle.dumps(user_info)
     encrypted_user_info = AES256(access_token, serialization = "bytes").encrypt(dumped_user_info)
 
     sessions = get_database("sessions", 604800) # 7 days
-    sessions[str(user.user_id)] = encrypted_user_info
 
-    session_token = SESSION_AES.encrypt(str(user.user_id) + "/" + access_token)
-    return session_token
+    sessions[str(user.user_id)] = encrypted_user_info
 
 
 def get_session(session_token: str) -> Tuple[Optional["User"], Optional[str]]:
@@ -183,8 +200,9 @@ def get_session(session_token: str) -> Tuple[Optional["User"], Optional[str]]:
             the user's session data.
 
     Returns:
-        Tuple[Optional[User], Optional[str]]: A tuple containing the user object
-            and access token if valid, or (None, None) if the session retrieval fails.
+        Tuple[Optional[User], Optional[str]]: A tuple containing the
+            user object, and access token if valid, or (None, None)
+            if the session retrieval fails.
     """
 
     session_token = session_token.rstrip(".")
@@ -198,6 +216,9 @@ def get_session(session_token: str) -> Tuple[Optional["User"], Optional[str]]:
 
     sessions = get_database("sessions", 604800) # 7 days
     encrypted_user_info = sessions[user_id]
+    if encrypted_user_info is None:
+        return (None, None)
+
     try:
         decrypted_user_info = AES256(
             access_token, serialization = "bytes"
@@ -240,12 +261,18 @@ class User:
         avatar = user_info.get("avatar")
         discriminator = int(user_info.get("discriminator", 0))
 
+        guilds = user_info.get("guilds")
+        loaded_guilds = [Guild(guild) for guild in guilds] if guilds else None
+
         self.user_info = {
             "id": user_id,
             "username": user_name,
             "avatar": avatar,
             "discriminator": discriminator
         }
+
+        if guilds:
+            self.user_info["guilds"] = guilds
 
         if avatar is None:
             default_avatar_index = discriminator % 5
@@ -256,12 +283,12 @@ class User:
         self.user_id = user_id
         self.user_name = user_name
         self.discriminator = discriminator
-
-        self.guilds: Optional[List["Guild"]] = None
+        self.guilds = loaded_guilds
 
 
     def set_guilds(self, guilds: list["Guild"]) -> None:
         self.guilds = guilds
+        self.user_info["guilds"] = [guild.guild_info for guild in guilds]
 
 
 class Guild:

@@ -119,7 +119,6 @@ class DatabaseInterface(dict):
     def _dump(self, data: dict) -> bool:
         if not data:
             return delete(self.file_path)
-
         return PICKLE.dump(data, self.file_path)
 
 

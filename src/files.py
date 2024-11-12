@@ -420,8 +420,10 @@ class CachedFile:
             bool: True if the data was dumped successfully, False otherwise.
         """
 
+        self._set_cache(file_path, data)
+
         try:
-            with get_write_stream(file_path, self._as_bytes, True, True) as file_stream:
+            with get_write_stream(file_path, self._as_bytes, True, False) as file_stream:
                 if file_stream is None:
                     return False
 

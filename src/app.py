@@ -14,10 +14,10 @@ from src.files import CURRENT_DIRECTORY_PATH
 from src.utils import load_dotenv, http_request
 from src.sanic_errors import ERROR_INFOS, handle_all_errors
 from src.database import get_database, get_database_decrypted
-from src.bot import has_role, verify_user, guilds, get_oauth_url
+from src.bot import has_role, verify_user, get_guilds, get_oauth_url
 from src.discordauth import (
-    User, Guild, is_valid_oauth_code, get_access_token, get_user_info,
-    create_session, get_session, is_session_token_valid, get_user_guilds
+    User, is_valid_oauth_code, get_access_token, get_user_info, create_session,
+    set_session, get_session, is_session_token_valid, get_user_guilds
 )
 
 
@@ -211,7 +211,7 @@ if LONG_HOSTNAME is not None:
         query = parsed_url.query
         fragment = parsed_url.fragment
 
-        if path not in ["/auth", "/callback"] and current_hostname != LONG_HOSTNAME:
+        if path in ["/", "/dashboard"] and current_hostname != LONG_HOSTNAME:
 
             new_url = urlunparse(
                 ("https", LONG_HOSTNAME, path, "", query, fragment)
@@ -238,7 +238,7 @@ async def index(_: Request) -> HTTPResponse:
         redirect_uri = QUOTED_REDIRECT_URI,
         cf_turnstile_site_key = TURNSTILE_SITE_KEY,
         long_hostname = LONG_HOSTNAME or HOSTNAME,
-        guilds = len(await guilds())
+        guilds = len(await get_guilds())
     )
 
     return html(template)
@@ -294,6 +294,18 @@ def verify_turnstile(turnstile_response: str, turnstile_site_secret: str) -> boo
 
 @app.route("/dashboard", methods=["GET", "POST"])
 async def dash(request: Request) -> HTTPResponse:
+    """
+    Handles the dashboard page for authenticated users.
+
+    Args:
+        request (Request): The incoming HTTP request object, containing query parameters
+            such as `state` and cookies, including the `session` cookie for the user's session.
+
+    Returns:
+        HTTPResponse: An HTTP response object that either renders the dashboard information
+            in JSON format, redirects to the login page, or sets a session cookie when needed.
+    """
+
     state = request.args.get("state")
 
     set_cookie = False
@@ -325,7 +337,8 @@ async def dash(request: Request) -> HTTPResponse:
         if guilds is None:
             return optional_cookie(render_login_redirect(state))
 
-        # Add guilds to session data
+        user.set_guilds(guilds)
+        set_session(user, access_token)
 
     if not isinstance(guilds, list):
         return optional_cookie(render_login_redirect(state))
