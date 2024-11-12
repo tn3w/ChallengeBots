@@ -1,5 +1,6 @@
 import os
 from typing import Optional
+from functools import lru_cache
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlunparse, urlparse, quote
 
@@ -135,6 +136,18 @@ def render_callback(user: User, error: Optional[str] = None) -> str:
         user_name = user.user_name, discriminator = user.discriminator,
         error = error
     )
+
+
+@lru_cache
+def render_maintenance() -> str:
+    """
+    Renders the maintenance page template.
+
+    Returns:
+        str: The rendered HTML content of the maintenance page.
+    """
+
+    return render_template("maintenance")
 
 
 def render_login_redirect(state: Optional[str] = None) -> HTTPResponse:
@@ -342,6 +355,8 @@ async def dash(request: Request) -> HTTPResponse:
 
     if not isinstance(guilds, list):
         return optional_cookie(render_login_redirect(state))
+
+    return optional_cookie(html(render_maintenance()))
 
     return optional_cookie(json([guild.guild_info for guild in guilds]))
 

@@ -167,7 +167,8 @@ ERROR_CLASSES: Final[list] = [
     MethodNotAllowed, RequestTimeout,
     PayloadTooLarge, RangeNotSatisfiable,
     ExpectationFailed, ServerError,
-    ServiceUnavailable, Exception
+    ServiceUnavailable, RuntimeError,
+    Exception
 ]
 
 
