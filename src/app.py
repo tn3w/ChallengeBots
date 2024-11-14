@@ -1,4 +1,5 @@
 import os
+import re
 from typing import Optional
 from functools import lru_cache
 from datetime import datetime, timezone, timedelta
@@ -6,16 +7,17 @@ from urllib.parse import urlunparse, urlparse, quote
 
 import asyncio
 
-from sanic.response import html, redirect, json
+from sanic.exceptions import NotFound
+from sanic.response import text, html, redirect, json
 from sanic import Sanic, Request, HTTPResponse, SanicException
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from src.logger import log
-from src.files import CURRENT_DIRECTORY_PATH
 from src.utils import load_dotenv, http_request
 from src.sanic_errors import ERROR_INFOS, handle_all_errors
 from src.database import get_database, get_database_decrypted
 from src.bot import has_role, verify_user, get_guilds, get_oauth_url
+from src.files import CURRENT_DIRECTORY_PATH, WELL_KNOWN_DIRECTORY_PATH, read
 from src.discordauth import (
     User, is_valid_oauth_code, get_access_token, get_user_info, create_session,
     set_session, get_session, is_session_token_valid, get_user_guilds
@@ -62,7 +64,7 @@ def render_error(title: str, description: str, code: int = 404) -> str:
     )
 
 
-def handle_error(_: Request, exception: SanicException) -> HTTPResponse:
+def handle_error(_: Request = None, exception: SanicException = NotFound) -> HTTPResponse:
     """
     Handles errors by rendering an appropriate error page based on the exception's status code.
 
@@ -85,6 +87,17 @@ def handle_error(_: Request, exception: SanicException) -> HTTPResponse:
     })
 
     return html(render_error(**error_info))
+
+
+def handle_not_found() -> HTTPResponse:
+    """
+    Returns an HTTP response for a "Not Found" error.
+
+    Returns:
+        HTTPResponse: The HTTP response with a 404 Not Found error status.
+    """
+
+    return handle_error(exception = NotFound)
 
 
 handle_all_errors(app, handle_error)
@@ -115,6 +128,77 @@ def render_template(template_name: str, **context) -> str:
     template = env.get_template(template_name)
 
     return template.render(**context)
+
+
+def text_to_markdown(markdown_text: str) -> str:
+    """
+    Converts a Markdown-formatted string into HTML.
+
+    Args:
+        markdown_text (str): The input Markdown string to be converted.
+
+    Returns:
+        str: The resulting HTML string with all Markdown formatting converted.
+    """
+
+    markdown_text = re.sub(r'###### (.+)', r'<h6>\1</h6>', markdown_text)
+    markdown_text = re.sub(r'##### (.+)', r'<h5>\1</h5>', markdown_text)
+    markdown_text = re.sub(r'#### (.+)', r'<h4>\1</h4>', markdown_text)
+    markdown_text = re.sub(r'### (.+)', r'<h3>\1</h3>', markdown_text)
+    markdown_text = re.sub(r'## (.+)', r'<h2>\1</h2>', markdown_text)
+    markdown_text = re.sub(r'# (.+)', r'<h1>\1</h1>', markdown_text)
+
+    markdown_text = re.sub(r'\*\*\*(.+?)\*\*\*', r'<b><i>\1</i></b>', markdown_text)
+    markdown_text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', markdown_text)
+    markdown_text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', markdown_text)
+
+    markdown_text = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2">\1</a>', markdown_text)
+
+    markdown_text = re.sub(r'```([^`]+)```', r'<pre><code>\1</code></pre>', markdown_text)
+    markdown_text = re.sub(r'`([^`]+)`', r'<code>\1</code>', markdown_text)
+
+    markdown_text = re.sub(r'(?m)^- (.+)', r'<ul><li>\1</li></ul>', markdown_text)
+    markdown_text = re.sub(r'(?m)^(\d+)\. (.+)', r'<ol><li>\2</li></ol>', markdown_text)
+
+    return markdown_text
+
+
+def clean_markdown(markdown_text: str) -> str:
+    """
+    Removes specific Markdown formatting and hyperlinks from a string.
+
+    Args:
+        markdown_text (str): The input Markdown string to be cleaned.
+
+    Returns:
+        str: The cleaned Markdown text with specific elements removed.
+    """
+
+    markdown_text = re.sub(r'\[.*?\]\((https?://[^\s]+)\)', r'\1', markdown_text)
+    markdown_text = markdown_text.replace("**", "")
+    markdown_text = markdown_text.replace("<br>", "")
+
+    return markdown_text
+
+
+def render_markdown(file_name: str, markdown_text: str) -> str:
+    """
+    Renders an HTML template with Markdown content converted to HTML.
+
+    Args:
+        file_name (str): The name of the HTML template file.
+        markdown_text (str): The Markdown text to convert and render in the template.
+
+    Returns:
+        str: The HTML string of the rendered template with Markdown content.
+    """
+
+    rendered_markdown = text_to_markdown(markdown_text)
+
+    return render_template(
+        "markdown", file_name = file_name,
+        rendered_markdown = rendered_markdown
+    )
 
 
 def render_callback(user: User, error: Optional[str] = None) -> str:
@@ -224,7 +308,9 @@ if LONG_HOSTNAME is not None:
         query = parsed_url.query
         fragment = parsed_url.fragment
 
-        if path in ["/", "/dashboard"] and current_hostname != LONG_HOSTNAME:
+        if path.startswith(("/", "/dashboard", "/privacy", "/security",
+                            "/terms", "/dnt", "/.well-known"))\
+            and current_hostname != LONG_HOSTNAME:
 
             new_url = urlunparse(
                 ("https", LONG_HOSTNAME, path, "", query, fragment)
@@ -357,8 +443,7 @@ async def dash(request: Request) -> HTTPResponse:
         return optional_cookie(render_login_redirect(state))
 
     return optional_cookie(html(render_maintenance()))
-
-    return optional_cookie(json([guild.guild_info for guild in guilds]))
+    #return optional_cookie(json([guild.guild_info for guild in guilds]))
 
 
 @app.route("/auth", methods=["GET", "POST"])
@@ -484,6 +569,59 @@ async def callback(request: Request) -> HTTPResponse:
         return html(render_callback(user, "Role assignment failed."), 400)
 
     return html(render_callback(user))
+
+
+@app.route("/<file_name>")
+@lru_cache()
+async def markdown_files(_: Request, file_name: Optional[str] = None) -> HTTPResponse:
+    """
+    Serves an HTML-rendered Markdown policy file for specific endpoints.
+
+    Args:
+        _ (Request): The incoming HTTP request object.
+        file_name (Optional[str]): The name of the policy file to retrieve, without file extension.
+
+    Returns:
+        HTTPResponse: The HTTP response containing the rendered HTML of the policy file.
+    """
+
+    if not file_name in ["security", "privacy", "dnt"]:
+        return handle_not_found()
+
+    file_path = os.path.join(WELL_KNOWN_DIRECTORY_PATH, file_name + "-policy.md")
+    file_content = read(file_path)
+    if file_content is None:
+        return handle_not_found()
+
+    return html(render_markdown(file_name, file_content))
+
+
+@app.route("/.well-known/<file_name>")
+@lru_cache()
+async def well_known_files(_: Request, file_name: Optional[str] = None) -> HTTPResponse:
+    """
+    Serves raw or cleaned Markdown policy files for well-known endpoints.
+
+    Args:
+        _ (Request): The incoming HTTP request object.
+        file_name (Optional[str]): The file name for the policy, including ".txt" extension.
+
+    Returns:
+        HTTPResponse: The HTTP response containing the policy file content as plain text.
+    """
+
+    if not file_name in ["security.txt", "security-policy.txt", "dnt-policy.txt"]:
+        return handle_not_found()
+
+    file_path = os.path.join(WELL_KNOWN_DIRECTORY_PATH, file_name.replace(".txt", "") + ".md")
+    file_content = read(file_path)
+    if file_content is None:
+        return handle_not_found()
+
+    if file_name != "dnt-policy.txt":
+        file_content = clean_markdown(file_content)
+
+    return text(file_content)
 
 
 async def run_app() -> None:

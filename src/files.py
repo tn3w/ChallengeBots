@@ -19,6 +19,8 @@ from src.logger import log
 CURRENT_DIRECTORY_PATH: Final[str] = os.path.dirname(os.path.abspath(__file__)) \
     .replace("\\", "/").replace("//", "/").replace("src", "").replace("//", "/")
 
+WELL_KNOWN_DIRECTORY_PATH: Final[str] = os.path.join(CURRENT_DIRECTORY_PATH, "src", "well-known")
+
 DATA_DIRECTORY_PATH: Final[str] = os.path.join(CURRENT_DIRECTORY_PATH, "data")
 if not os.path.exists(DATA_DIRECTORY_PATH):
     os.makedirs(DATA_DIRECTORY_PATH, exist_ok = True)
