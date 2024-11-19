@@ -343,6 +343,22 @@ async def index(_: Request) -> HTTPResponse:
     return html(template)
 
 
+@app.route("/robots.txt", methods = ["GET", "POST"])
+async def robots(_: Request) -> HTTPResponse:
+    """
+    Handles requests to "/robots.txt" to provide instructions for web crawlers.
+
+    Args:
+        _: Request: The incoming request object. The parameter is named with an 
+                    underscore to indicate that it is unused in this function.
+
+    Returns:
+        HTTPResponse: A plain text response containing directives for web crawlers.
+    """
+
+    return text("User-agent: *\nDisallow:")
+
+
 def verify_turnstile(turnstile_response: str, turnstile_site_secret: str) -> bool:
     """
     Verifies the user's identity using Cloudflare's Turnstile CAPTCHA verification.
