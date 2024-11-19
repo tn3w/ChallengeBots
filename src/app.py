@@ -308,8 +308,8 @@ if LONG_HOSTNAME is not None:
         query = parsed_url.query
         fragment = parsed_url.fragment
 
-        if path in ("/", "/dashboard", "/privacy", "/security", "/terms", "/dnt") \
-            or path.startswith("/.well-known") \
+        if (path in ("/", "/dashboard", "/privacy", "/security", "/terms", "/dnt") \
+            or path.startswith("/.well-known")) \
             and current_hostname != LONG_HOSTNAME:
 
             new_url = urlunparse(
