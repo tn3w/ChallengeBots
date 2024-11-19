@@ -308,8 +308,8 @@ if LONG_HOSTNAME is not None:
         query = parsed_url.query
         fragment = parsed_url.fragment
 
-        if path.startswith(("/", "/dashboard", "/privacy", "/security",
-                            "/terms", "/dnt", "/.well-known"))\
+        if path in ("/", "/dashboard", "/privacy", "/security", "/terms", "/dnt") \
+            or path.startswith("/.well-known") \
             and current_hostname != LONG_HOSTNAME:
 
             new_url = urlunparse(
@@ -653,5 +653,16 @@ async def run_app() -> None:
     await server.serve_forever()
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """
+    Entry point for the application.
+
+    Returns:
+        None
+    """
+
     asyncio.run(run_app())
+
+
+if __name__ == "__main__":
+    main()

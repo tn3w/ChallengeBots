@@ -311,5 +311,16 @@ async def run_bot() -> None:
     await bot.start(DISCORD_TOKEN)
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """
+    Entry point for the Discord bot application.
+
+    Returns:
+        None
+    """
+
     asyncio.run(run_bot())
+
+
+if __name__ == "__main__":
+    main()
