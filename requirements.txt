@@ -1,7 +1,3 @@
-discord.py
-asyncio
-pillow
-uvloop
-sanic
-jinja2
-cryptography
+discord.py==2.3.2
+Flask==2.3.3
+uvloop==0.19.0; platform_system != "Windows"

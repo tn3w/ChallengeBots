@@ -1,684 +1,1104 @@
 import os
-import re
-from typing import Optional
-from functools import lru_cache
-from datetime import datetime, timezone, timedelta
-from urllib.parse import urlunparse, urlparse, quote
-
 import asyncio
+import logging
+import json
+import urllib.request
+import urllib.parse
+import secrets
+from functools import wraps
+import time
 
-from sanic.exceptions import NotFound
-from sanic.response import text, html, redirect, json
-from sanic import Sanic, Request, HTTPResponse, SanicException
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-
-from src.logger import log
-from src.utils import load_dotenv, http_request
-from src.sanic_errors import ERROR_INFOS, handle_all_errors
-from src.database import get_database, get_database_decrypted
-from src.bot import has_role, verify_user, get_guilds, get_oauth_url
-from src.files import CURRENT_DIRECTORY_PATH, WELL_KNOWN_DIRECTORY_PATH, read
-from src.discordauth import (
-    User, is_valid_oauth_code, get_access_token, get_user_info, create_session,
-    set_session, get_session, is_session_token_valid, get_user_guilds
+from flask import (
+    Flask,
+    Response,
+    render_template,
+    request,
+    jsonify,
+    redirect,
+    session,
+    url_for,
 )
+import discord
+from src.utils import load_dotenv
+from src.database import Database
+from src.bot import bot, VerificationView
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__, template_folder="../templates")
+app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(16)
 
 load_dotenv()
-PORT = os.getenv("PORT")
-HOST = os.getenv("HOST")
-HOSTNAME = os.getenv("HOSTNAME", "")
-LONG_HOSTNAME = os.getenv("LONG_HOSTNAME")
+CLIENT_ID = os.getenv("CLIENT_ID", "1000000000000000000")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET", "")
+REDIRECT_URI = urllib.parse.quote(
+    os.getenv("REDIRECT_URI", "http://localhost:5000/auth")
+)
+HCAPTCHA_SITE_KEY = os.getenv(
+    "HCAPTCHA_SITE_KEY", "10000000-ffff-ffff-ffff-000000000001"
+)
+HCAPTCHA_SECRET_KEY = os.getenv(
+    "HCAPTCHA_SECRET_KEY", "0x0000000000000000000000000000000000000000"
+)
 
-CERT_FILE_PATH = os.getenv("CERT_FILE_PATH")
-KEY_FILE_PATH = os.getenv("KEY_FILE_PATH")
+OAUTH_USER_AGENT = "ChallengeBots (https://challengebots.tn3w.dev, v1.0)"
 
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-REDIRECT_URI = "https://" + HOSTNAME
-QUOTED_REDIRECT_URI = quote(REDIRECT_URI)
-
-TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY")
-TURNSTILE_SITE_SECRET = os.getenv("TURNSTILE_SITE_SECRET")
-
-app = Sanic("ChallengeBots")
+db = Database()
 
 
-def render_error(title: str, description: str, code: int = 404) -> str:
-    """
-    Renders the error template with the specified title, description, and HTTP error code.
+def get_guild_count():
+    """Get the number of guilds (servers) the bot is connected to."""
+    try:
+        if not bot.is_ready():
+            return 0
+        count = len(bot.guilds)
+        return count
+    except Exception:
+        return 0
 
-    Args:
-        title (str): The title of the error to display in the rendered template.
-        description (str): A detailed description of the error for the user.
-        code (int, optional): The HTTP error code to display. Defaults to 400.
 
-    Returns:
-        str: The rendered HTML string of the error template.
-    """
+def verify_hcaptcha(captcha_response):
+    """Verify the hCaptcha response with the hCaptcha API."""
+    data = {"secret": HCAPTCHA_SECRET_KEY, "response": captcha_response}
+    encoded_data = urllib.parse.urlencode(data).encode("ascii")
 
-    return render_template(
-        "error", title = title,
-        description = description,
-        code = str(code)
+    hcaptcha_request = urllib.request.Request(
+        "https://hcaptcha.com/siteverify", data=encoded_data, method="POST"
     )
-
-
-def handle_error(_: Request = None, exception: SanicException = NotFound) -> HTTPResponse:
-    """
-    Handles errors by rendering an appropriate error page based on the exception's status code.
-
-    Args:
-        _ (Request): The Sanic request object. Unused in this function.
-        exception (SanicException): The exception raised, containing the status code to be handled.
-
-    Returns:
-        HTTPResponse: An HTML response displaying the error page with a title, description,
-                      and code based on the exception details.
-    """
-
-    status_code = getattr(exception, "status_code", 400)
-
-    error_info = ERROR_INFOS.get(status_code, {
-        "code": 400,
-        "title": "Something happened",
-        "description": ("Like a black hole that irrevocably devours "
-                        "data and processes and leaves no answers behind.")
-    })
-
-    return html(render_error(**error_info))
-
-
-def handle_not_found() -> HTTPResponse:
-    """
-    Returns an HTTP response for a "Not Found" error.
-
-    Returns:
-        HTTPResponse: The HTTP response with a 404 Not Found error status.
-    """
-
-    return handle_error(exception = NotFound)
-
-
-handle_all_errors(app, handle_error)
-
-
-def render_template(template_name: str, **context) -> str:
-    """
-    Renders an HTML template with the given context.
-
-    Args:
-        template_name (str): The name of the template file to be rendered. 
-                             If it does not end with '.html', this suffix will be added.
-        **context: Arbitrary keyword arguments that will be passed to the template for rendering.
-
-    Returns:
-        str: The rendered HTML as a string.
-    """
-
-    if not template_name.endswith(".html"):
-        template_name += ".html"
-
-    template_dir = os.path.join(CURRENT_DIRECTORY_PATH,  'src', 'templates')
-    env = Environment(
-        loader=FileSystemLoader(template_dir),
-        autoescape=select_autoescape(['html', 'xml'])
-    )
-
-    template = env.get_template(template_name)
-
-    return template.render(**context)
-
-
-def text_to_markdown(markdown_text: str) -> str:
-    """
-    Converts a Markdown-formatted string into HTML.
-
-    Args:
-        markdown_text (str): The input Markdown string to be converted.
-
-    Returns:
-        str: The resulting HTML string with all Markdown formatting converted.
-    """
-
-    markdown_text = re.sub(r'###### (.+)', r'<h6>\1</h6>', markdown_text)
-    markdown_text = re.sub(r'##### (.+)', r'<h5>\1</h5>', markdown_text)
-    markdown_text = re.sub(r'#### (.+)', r'<h4>\1</h4>', markdown_text)
-    markdown_text = re.sub(r'### (.+)', r'<h3>\1</h3>', markdown_text)
-    markdown_text = re.sub(r'## (.+)', r'<h2>\1</h2>', markdown_text)
-    markdown_text = re.sub(r'# (.+)', r'<h1>\1</h1>', markdown_text)
-
-    markdown_text = re.sub(r'\*\*\*(.+?)\*\*\*', r'<b><i>\1</i></b>', markdown_text)
-    markdown_text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', markdown_text)
-    markdown_text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', markdown_text)
-
-    markdown_text = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2">\1</a>', markdown_text)
-
-    markdown_text = re.sub(r'```([^`]+)```', r'<pre><code>\1</code></pre>', markdown_text)
-    markdown_text = re.sub(r'`([^`]+)`', r'<code>\1</code>', markdown_text)
-
-    markdown_text = re.sub(r'(?m)^- (.+)', r'<ul><li>\1</li></ul>', markdown_text)
-    markdown_text = re.sub(r'(?m)^(\d+)\. (.+)', r'<ol><li>\2</li></ol>', markdown_text)
-
-    return markdown_text
-
-
-def clean_markdown(markdown_text: str) -> str:
-    """
-    Removes specific Markdown formatting and hyperlinks from a string.
-
-    Args:
-        markdown_text (str): The input Markdown string to be cleaned.
-
-    Returns:
-        str: The cleaned Markdown text with specific elements removed.
-    """
-
-    markdown_text = re.sub(r'\[.*?\]\((https?://[^\s]+)\)', r'\1', markdown_text)
-    markdown_text = markdown_text.replace("**", "")
-    markdown_text = markdown_text.replace("<br>", "")
-
-    return markdown_text
-
-
-def render_markdown(file_name: str, markdown_text: str) -> str:
-    """
-    Renders an HTML template with Markdown content converted to HTML.
-
-    Args:
-        file_name (str): The name of the HTML template file.
-        markdown_text (str): The Markdown text to convert and render in the template.
-
-    Returns:
-        str: The HTML string of the rendered template with Markdown content.
-    """
-
-    rendered_markdown = text_to_markdown(markdown_text)
-
-    return render_template(
-        "markdown", file_name = file_name,
-        rendered_markdown = rendered_markdown
-    )
-
-
-def render_callback(user: User, error: Optional[str] = None) -> str:
-    """
-    Renders the verified template with the provided user information.
-
-    Args:
-        user (User): The User object containing information about the user,
-            including avatar URL, username, and discriminator.
-        error (Optional[str]): An optional error message to display. If provided,
-            it will be included in the rendered template.
-
-    Returns:
-        str: The rendered HTML string of the verified template.
-    """
-
-    return render_template(
-        "callback", avatar_url = user.avatar_url,
-        user_name = user.user_name, discriminator = user.discriminator,
-        error = error
-    )
-
-
-@lru_cache
-def render_maintenance() -> str:
-    """
-    Renders the maintenance page template.
-
-    Returns:
-        str: The rendered HTML content of the maintenance page.
-    """
-
-    return render_template("maintenance")
-
-
-def render_login_redirect(state: Optional[str] = None) -> HTTPResponse:
-    """
-    Generates a redirect response to initiate the Discord OAuth2 login process.
-
-    Args:
-        state (Optional[str]): An optional state parameter to maintain state between
-            the request and callback. This can be used for CSRF protection or to
-            store information about the user's session.
-
-    Returns:
-        HTTPResponse: A redirect response to the constructed authorization URL.
-    """
-
-    if state == "err":
-        return render_error("Forbidden", "The client is in an error state.", 403)
-
-    if not state:
-        state = "err"
-
-    return redirect(get_oauth_url(state))
-
-
-def response_set_cookies(request: Request, response: HTTPResponse, cookies: dict) -> HTTPResponse:
-    """
-    Sets cookies in the HTTP response based on the provided cookie dictionary.
-
-    Args:
-        request (Request): The HTTP request object, used to determine the scheme 
-                           (HTTP or HTTPS) for setting the secure flag.
-        response (HTTPResponse): The HTTP response object to which cookies will be added.
-        cookies (dict): A dictionary of cookies to set, where keys are cookie names 
-                        and values are cookie values.
-
-    Returns:
-        HTTPResponse: The modified HTTP response object with the cookies set.
-    """
-
-    cookie_settings = {
-        "path": "/",
-        "samesite": "Strict",
-        "httponly": True,
-        "secure": request.scheme == "https",
-        "max_age": 604800 # 7 days
-    }
-
-    for key, value in cookies.items():
-        response.cookies.add_cookie(key, value, **cookie_settings)
-
-    return response
-
-
-if LONG_HOSTNAME is not None:
-    @app.middleware("request")
-    async def redirect_to_long_hostname(request: Request):
-        """
-        Middleware that redirects requests to a specified long hostname if the request
-        path is not '/auth' or '/callback' and the current hostname is different from
-        the specified LONG_HOSTNAME.
-
-        Args:
-            request (Request): The incoming HTTP request.
-
-        Returns:
-            HTTPResponse: A redirect response to the new URL with the long hostname
-                if the conditions are met; otherwise, the request proceeds normally.
-        """
-
-        current_url = request.url
-        parsed_url = urlparse(current_url)
-        current_hostname = parsed_url.hostname
-        path = parsed_url.path
-        query = parsed_url.query
-        fragment = parsed_url.fragment
-
-        if (path in ("/", "/dashboard", "/privacy", "/security", "/terms", "/dnt") \
-            or path.startswith("/.well-known")) \
-            and current_hostname != LONG_HOSTNAME:
-
-            new_url = urlunparse(
-                ("https", LONG_HOSTNAME, path, "", query, fragment)
-            )
-            return redirect(new_url)
-
-
-@app.route("/", methods = ["GET", "POST"])
-async def index(_: Request) -> HTTPResponse:
-    """
-    Handles requests to the root URL ("/") of the application.
-
-    Args:
-        _: Request: The incoming request object. The parameter is named with an 
-                    underscore to indicate that it is unused in this function.
-
-    Returns:
-        HTTPResponse: The HTML response containing the rendered "index" template.
-    """
-
-
-    template = render_template(
-        "index", client_id = CLIENT_ID,
-        redirect_uri = QUOTED_REDIRECT_URI,
-        cf_turnstile_site_key = TURNSTILE_SITE_KEY,
-        long_hostname = LONG_HOSTNAME or HOSTNAME,
-        guilds = len(await get_guilds())
-    )
-
-    return html(template)
-
-
-@app.route("/robots.txt", methods = ["GET", "POST"])
-async def robots(_: Request) -> HTTPResponse:
-    """
-    Handles requests to "/robots.txt" to provide instructions for web crawlers.
-
-    Args:
-        _: Request: The incoming request object. The parameter is named with an 
-                    underscore to indicate that it is unused in this function.
-
-    Returns:
-        HTTPResponse: A plain text response containing directives for web crawlers.
-    """
-
-    return text("User-agent: *\nDisallow:")
-
-
-def verify_turnstile(turnstile_response: str, turnstile_site_secret: str) -> bool:
-    """
-    Verifies the user's identity using Cloudflare's Turnstile CAPTCHA verification.
-
-    Args:
-        turnstile_response (str): The CAPTCHA response token from the user's submission.
-        turnstile_site_secret (str): The secret key used to authenticate with
-            the Turnstile API.
-
-    Returns:
-        bool: True if the CAPTCHA verification is successful, False otherwise.
-    """
-
-    data = {
-        "secret": turnstile_site_secret,
-        "response": turnstile_response
-    }
-
-    url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
-    response = http_request(url, "POST", is_json = True, data = data)
-
-    if not response or not isinstance(response, dict):
-        return False
-
-    if not response.get("hostname", HOSTNAME) == HOSTNAME:
-        return False
-
-    if not response.get("success", False):
-        return False
-
-    timestamp_str = response.get('challenge_ts', None)
 
     try:
-        challenge_time = datetime.strptime(timestamp_str, '%Y-%m-%dT%H:%M:%S.%fZ')
-    except Exception as exception:
-        log(exception, level = 4)
+        with urllib.request.urlopen(hcaptcha_request, timeout=3) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            return result.get("success", False)
+    except Exception:
         return False
 
-    if challenge_time.tzinfo is None:
-        challenge_time = challenge_time.replace(tzinfo=timezone.utc)
 
-    current_time = datetime.now(timezone.utc)
-    if current_time - challenge_time > timedelta(minutes = 5):
-        return False
+def rate_limit(limit_seconds=60):
+    """Decorator to rate limit API endpoints by IP address."""
 
-    return response.get("success", False)
+    def decorator(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            ip = request.remote_addr
+            if db.check_rate_limit(ip, f.__name__, limit_seconds):
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Rate limit exceeded. Please try again later.",
+                        }
+                    ),
+                    429,
+                )
+            return f(*args, **kwargs)
 
+        return wrapped
 
-@app.route("/dashboard", methods=["GET", "POST"])
-async def dash(request: Request) -> HTTPResponse:
-    """
-    Handles the dashboard page for authenticated users.
-
-    Args:
-        request (Request): The incoming HTTP request object, containing query parameters
-            such as `state` and cookies, including the `session` cookie for the user's session.
-
-    Returns:
-        HTTPResponse: An HTTP response object that either renders the dashboard information
-            in JSON format, redirects to the login page, or sets a session cookie when needed.
-    """
-
-    state = request.args.get("state")
-
-    set_cookie = False
-
-    session_token = request.cookies.get("session")
-    if session_token is None:
-        session_token = request.args.get("session")
-        set_cookie = True
-
-    def optional_cookie(response: HTTPResponse) -> HTTPResponse:
-        if not set_cookie:
-            return response
-
-        return response_set_cookies(request, response, {"session": session_token})
-
-    if not is_session_token_valid(session_token):
-        return render_login_redirect(state)
-
-    if session_token.endswith("."):
-        return optional_cookie(render_login_redirect(state))
-
-    user, access_token = get_session(session_token)
-
-    if None in [user, access_token]:
-        return optional_cookie(render_login_redirect(state))
-
-    if (guilds := user.guilds) is None:
-        guilds = get_user_guilds(access_token)
-        if guilds is None:
-            return optional_cookie(render_login_redirect(state))
-
-        user.set_guilds(guilds)
-        set_session(user, access_token)
-
-    if not isinstance(guilds, list):
-        return optional_cookie(render_login_redirect(state))
-
-    return optional_cookie(html(render_maintenance()))
-    #return optional_cookie(json([guild.guild_info for guild in guilds]))
+    return decorator
 
 
-@app.route("/auth", methods=["GET", "POST"])
-async def auth(request: Request) -> HTTPResponse:
-    """
-    Handles the authentication process for users.
+def login_required(f):
+    """Decorator to require login for API endpoints."""
 
-    Args:
-        request (Request): The incoming HTTP request object containing query parameters
-            and session information.
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get("user_token"):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Authentication required",
+                        "logged_in": False,
+                    }
+                ),
+                401,
+            )
+        return f(*args, **kwargs)
 
-    Returns:
-        HTTPResponse: An HTTP response object that may redirect the user, render
-            a template, or return an error message based on the outcome
-            of the login or verification process.
-    """
+    return decorated_function
 
-    code = request.args.get("code")
-    state = request.args.get("state")
 
-    if not code or not is_valid_oauth_code(code):
-        return render_login_redirect(state)
-
-    access_token = get_access_token(
-        CLIENT_ID, CLIENT_SECRET,
-        REDIRECT_URI + "/auth", code
+@app.route("/")
+def index():
+    """Redirect to home page."""
+    return render_template(
+        "index.html",
+        site_key=HCAPTCHA_SITE_KEY,
+        client_id=CLIENT_ID,
+        redirect_uri=REDIRECT_URI,
+        guild_count=get_guild_count(),
     )
 
-    if not access_token:
-        return render_login_redirect(state)
 
-    user = get_user_info(access_token)
-    if user is None:
-        return render_login_redirect(state)
-
-    session_token = create_session(user, access_token)
-
-    def set_cookie(response: HTTPResponse) -> HTTPResponse:
-        return response_set_cookies(request, response, {"session": session_token})
-
-    if not state or state == "err":
-        return set_cookie(redirect("/dashboard?session=" + str(session_token)))
-
-    session_token += "."
-
-    if len(state) != 20:
-        return set_cookie(html(render_callback(user, "Invalid or expired session."), 400))
-
-    states = get_database_decrypted("states", None)
-    state_data = states.get(state)
-    if not state_data:
-        return set_cookie(html(render_callback(user, "Invalid or expired session."), 400))
-
-    guild_id, role_id = state_data
-    if has_role(role_id, guild_id, user.user_id):
-        return set_cookie(html(render_callback(user)))
-
-    verified_users = get_database("verified_users", 1200)
-
-    if verified_users.exists(str(user.user_id)):
-        is_verified = verify_user(guild_id, role_id, user, True)
-        if not is_verified:
-            return set_cookie(html(render_callback(user, "Failed to assign role."), 400))
-
-        return set_cookie(html(render_callback(user)))
-
-    return set_cookie(html(render_template(
-        "challenge", avatar_url = user.avatar_url, user_name = user.user_name,
-        discriminator = user.discriminator, state = state, session = session_token,
-        cf_turnstile_site_key = TURNSTILE_SITE_KEY
-    )))
+@app.route("/dashboard")
+@app.route("/dashboard/<guild_id>")
+def dashboard(guild_id=None):
+    """Render the dashboard page."""
+    return render_template("dash.html", guild_id=guild_id)
 
 
-@app.route("/callback", methods=["GET", "POST"])
-async def callback(request: Request) -> HTTPResponse:
-    """
-    Processes the callback for role verification after the initial authentication process.
+@app.route("/auth")
+def auth():
+    """Handle OAuth callback from Discord."""
+    code = request.args.get("code")
+    if not code:
+        return redirect(url_for("index"))
 
-    Args:
-        request (Request): The incoming HTTP request object containing form data,
-            cookies, and session information.
+    data = {
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": request.base_url,
+        "scope": "identify guilds",
+    }
 
-    Returns:
-        HTTPResponse: An HTTP response object that confirms the verification process outcome,
-            either completing the process or returning an error if validation fails.
-    """
+    try:
+        encoded_data = urllib.parse.urlencode(data).encode("ascii")
 
-    if request.method.lower() == "get":
-        return redirect("/")
-
-    session_token = request.form.get("session")
-    if session_token is None:
-        session_token = request.cookies.get("session")
-
-    if not is_session_token_valid(session_token):
-        return render_error("Unauthorized", "The current session is invalid.", 401)
-
-    user = get_session(session_token)[0]
-
-    if not user:
-        return render_error("Unauthorized", "The current session is invalid.", 401)
-
-    state = request.form.get("state")
-    if len(state) != 20:
-        return html(render_callback(user, "Invalid or expired state."), 400)
-
-    states = get_database_decrypted("states", None)
-    state_data = states.get(state)
-    if not state_data:
-        return html(render_callback(user, "Invalid or expired state."), 400)
-
-    guild_id, role_id = state_data
-
-    turnstile_response = request.form.get("cf-turnstile-response")
-    if not verify_turnstile(turnstile_response, TURNSTILE_SITE_SECRET):
-        return html(render_callback(user, "Verification of human identity failed."), 400)
-
-    verified_users = get_database("verified_users", 1200)
-    verified_users[str(user.user_id)] = None
-
-    is_verified = verify_user(guild_id, role_id, user)
-    if not is_verified:
-        return html(render_callback(user, "Role assignment failed."), 400)
-
-    return html(render_callback(user))
-
-
-@app.route("/<file_name>")
-@lru_cache()
-async def markdown_files(_: Request, file_name: Optional[str] = None) -> HTTPResponse:
-    """
-    Serves an HTML-rendered Markdown policy file for specific endpoints.
-
-    Args:
-        _ (Request): The incoming HTTP request object.
-        file_name (Optional[str]): The name of the policy file to retrieve, without file extension.
-
-    Returns:
-        HTTPResponse: The HTTP response containing the rendered HTML of the policy file.
-    """
-
-    if not file_name in ["security", "privacy", "dnt"]:
-        return handle_not_found()
-
-    file_path = os.path.join(WELL_KNOWN_DIRECTORY_PATH, file_name + "-policy.md")
-    file_content = read(file_path)
-    if file_content is None:
-        return handle_not_found()
-
-    return html(render_markdown(file_name, file_content))
-
-
-@app.route("/.well-known/<file_name>")
-@lru_cache()
-async def well_known_files(_: Request, file_name: Optional[str] = None) -> HTTPResponse:
-    """
-    Serves raw or cleaned Markdown policy files for well-known endpoints.
-
-    Args:
-        _ (Request): The incoming HTTP request object.
-        file_name (Optional[str]): The file name for the policy, including ".txt" extension.
-
-    Returns:
-        HTTPResponse: The HTTP response containing the policy file content as plain text.
-    """
-
-    if not file_name in ["security.txt", "security-policy.txt", "dnt-policy.txt"]:
-        return handle_not_found()
-
-    file_path = os.path.join(WELL_KNOWN_DIRECTORY_PATH, file_name.replace(".txt", "") + ".md")
-    file_content = read(file_path)
-    if file_content is None:
-        return handle_not_found()
-
-    if file_name != "dnt-policy.txt":
-        file_content = clean_markdown(file_content)
-
-    return text(file_content)
-
-
-async def run_app() -> None:
-    """
-    Starts the app.
-
-    Returns:
-        None
-    """
-
-    ssl = None
-    if not None in [CERT_FILE_PATH, KEY_FILE_PATH]:
-        ssl = {
-            "cert": CERT_FILE_PATH,
-            "key": KEY_FILE_PATH
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": OAUTH_USER_AGENT,
+            "Accept": "*/*",
         }
 
-    server = await app.create_server(
-        port = PORT,
-        host = HOST,
-        return_asyncio_server = True,
-        ssl = ssl
+        oauth_request = urllib.request.Request(
+            "https://discord.com/api/oauth2/token",
+            data=encoded_data,
+            method="POST",
+            headers=headers,
+        )
+
+        with urllib.request.urlopen(oauth_request) as response:
+            token_data = json.loads(response.read().decode("utf-8"))
+
+        access_token = token_data["access_token"]
+        refresh_token = token_data.get("refresh_token")
+        expires_in = token_data.get("expires_in")
+
+        token_expires_at = None
+        if expires_in:
+            token_expires_at = int(time.time()) + int(expires_in)
+
+        session["user_token"] = access_token
+
+        user_headers = {
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": OAUTH_USER_AGENT,
+            "Accept": "application/json",
+        }
+
+        user_request = urllib.request.Request(
+            "https://discord.com/api/users/@me",
+            headers=user_headers,
+        )
+
+        with urllib.request.urlopen(user_request) as user_response:
+            user_info = json.loads(user_response.read().decode("utf-8"))
+
+        user_id = user_info["id"]
+        username = user_info["username"]
+        discriminator = user_info.get("discriminator", "0")
+        avatar_hash = user_info.get("avatar")
+
+        if avatar_hash:
+            avatar_url = (
+                f"https://cdn.discordapp.com/avatars/{user_id}/{avatar_hash}.png"
+            )
+        else:
+            avatar_url = "https://cdn.discordapp.com/embed/avatars/0.png"
+
+        db.store_discord_user(
+            user_id=user_id,
+            username=username,
+            discriminator=discriminator,
+            avatar_url=avatar_url,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_expires_at=token_expires_at,
+        )
+
+        session["user_id"] = user_id
+        session["username"] = username
+        session["discriminator"] = discriminator
+        session["avatar"] = avatar_url
+
+        return redirect(url_for("dashboard"))
+    except urllib.error.HTTPError as he:
+        error_body = he.read().decode("utf-8")
+        logger.error("OAuth HTTP error %d: %s - %s", he.code, he.reason, error_body)
+        return redirect(url_for("index"))
+    except Exception as e:
+        logger.error("OAuth error: %s", str(e))
+        return redirect(url_for("index"))
+
+
+@app.route("/api/user")
+def get_user():
+    """Get current user information."""
+    if not session.get("user_token") and not session.get("user_id"):
+        return jsonify({"success": True, "logged_in": False})
+
+    try:
+        user_id = session.get("user_id")
+
+        if not all([session.get("username"), session.get("avatar")]) and user_id:
+            user_data = db.get_discord_user(user_id)
+            if user_data:
+                session["user_token"] = user_data.get("access_token")
+                session["username"] = user_data.get("username")
+                session["discriminator"] = user_data.get("discriminator")
+                session["avatar"] = user_data.get("avatar_url")
+            else:
+                session.clear()
+                return jsonify({"success": True, "logged_in": False})
+
+        return jsonify(
+            {
+                "success": True,
+                "logged_in": True,
+                "user_id": session.get("user_id"),
+                "username": session.get("username"),
+                "discriminator": session.get("discriminator"),
+                "avatar": session.get("avatar"),
+            }
+        )
+    except Exception as e:
+        logger.error("Error getting user info: %s", str(e))
+        return jsonify(
+            {"success": False, "error": "Could not retrieve user information"}
+        )
+
+
+@app.route("/api/servers")
+@login_required
+def get_servers():
+    """Get list of servers where the user is an admin."""
+    try:
+        user_id = session.get("user_id")
+
+        cached_servers = db.get_cached_servers(user_id)
+
+        if cached_servers is None:
+            guild_headers = {
+                "Authorization": f"Bearer {session['user_token']}",
+                "User-Agent": OAUTH_USER_AGENT,
+                "Accept": "application/json",
+            }
+
+            guild_request = urllib.request.Request(
+                "https://discord.com/api/users/@me/guilds",
+                headers=guild_headers,
+            )
+
+            with urllib.request.urlopen(guild_request) as response:
+                guilds = json.loads(response.read().decode("utf-8"))
+
+            admin_guilds = []
+            servers_to_cache = []
+
+            for guild in guilds:
+                permissions = int(guild.get("permissions", 0))
+                if (permissions & 0x20) == 0x20:
+                    guild_id = guild["id"]
+
+                    icon_url = None
+                    if guild.get("icon"):
+                        icon_url = (
+                            "https://cdn.discordapp.com/icons/"
+                            f"{guild['id']}/{guild['icon']}.png"
+                        )
+                    else:
+                        icon_url = "https://cdn.discordapp.com/embed/avatars/0.png"
+
+                    servers_to_cache.append(
+                        {
+                            "id": guild_id,
+                            "name": guild["name"],
+                            "icon": icon_url,
+                        }
+                    )
+
+            if servers_to_cache:
+                db.store_cached_servers(user_id, servers_to_cache)
+
+            cached_servers = servers_to_cache
+
+        admin_guilds = []
+        for server in cached_servers:
+            guild_id = server["id"]
+            has_bot = False
+
+            if bot.is_ready():
+                try:
+                    bot_guild = bot.get_guild(int(guild_id))
+                    if bot_guild is None and hasattr(bot, "get_mutual_guilds"):
+                        mutual_guilds = [g for g in bot.guilds if str(g.id) == guild_id]
+                        has_bot = len(mutual_guilds) > 0
+                    else:
+                        has_bot = bot_guild is not None
+                except Exception as e:
+                    logger.error("Error checking bot guild membership: %s", str(e))
+                    has_bot = False
+
+            admin_guilds.append(
+                {
+                    "id": guild_id,
+                    "name": server["name"],
+                    "icon": server["icon"],
+                    "has_bot": has_bot,
+                }
+            )
+
+        return jsonify(
+            {
+                "success": True,
+                "servers": admin_guilds,
+                "client_id": CLIENT_ID,
+                "redirect_uri": request.host_url + "auth",
+            }
+        )
+    except urllib.error.HTTPError as e:
+        logger.error("HTTP error getting servers: %s - %s", e.code, e.reason)
+        return jsonify({"success": False, "error": "Could not retrieve server list"})
+    except Exception as e:
+        logger.error("Error getting servers: %s", str(e))
+        return jsonify({"success": False, "error": "Could not retrieve server list"})
+
+
+@app.route("/verify")
+def verify():
+    """Render the verification page."""
+    return Response(
+        render_template("verify.html", site_key=HCAPTCHA_SITE_KEY),
+        headers={"Cache-Control": "public, max-age=31536000"},
     )
 
-    if server is None:
-        return
 
-    await server.startup()
-    await server.serve_forever()
+@app.route("/api/verify-tokens", methods=["GET"])
+@rate_limit(1)
+def verify_tokens():
+    """Verify the verification and user tokens."""
+    verification_id = request.args.get("verification_id")
+    user_token = request.args.get("token")
+
+    if not verification_id or not user_token:
+        return jsonify({"success": False, "error": "Missing verification parameters"})
+
+    user_info = db.validate_user_token(user_token)
+    if not user_info:
+        return jsonify(
+            {"success": False, "error": "Invalid or expired verification token"}
+        )
+
+    verification = db.get_verification(verification_id)
+    if not verification:
+        return jsonify({"success": False, "error": "Invalid verification request"})
+
+    avatar_url = user_info.get(
+        "avatar_url", "https://cdn.discordapp.com/embed/avatars/0.png"
+    )
+
+    username = user_info.get("username", "Unknown User")
+    discriminator = user_info.get("discriminator", "0")
+
+    return jsonify(
+        {
+            "success": True,
+            "verification_id": verification_id,
+            "user_token": user_token,
+            "member_id": user_info.get("member_id"),
+            "username": username,
+            "discriminator": discriminator,
+            "avatar_url": avatar_url,
+        }
+    )
 
 
-def main() -> None:
+@app.route("/api/complete-verification", methods=["POST"])
+@rate_limit(2)
+def complete_verification():
+    """Complete the verification process after hCaptcha is solved."""
+    data = request.json
+
+    verification_id = data.get("verification_id")
+    user_token = data.get("user_token")
+    captcha_response = data.get("captcha_response")
+
+    if not verification_id or not user_token or not captcha_response:
+        return jsonify({"success": False, "error": "Missing required fields"})
+
+    if not verify_hcaptcha(captcha_response):
+        return jsonify({"success": False, "error": "CAPTCHA verification failed"})
+
+    user_info = db.validate_user_token(user_token)
+    if not user_info:
+        return jsonify(
+            {"success": False, "error": "Invalid or expired verification token"}
+        )
+
+    try:
+        member_id = user_info.get("member_id")
+
+        db.mark_verification_complete(verification_id, member_id)
+        db.remove_user_token(user_token)
+
+        return jsonify(
+            {
+                "success": True,
+                "message": "Verification successful! You can now return to Discord.",
+            }
+        )
+    except Exception as e:
+        logger.error("Error completing verification: %s", str(e))
+        return jsonify(
+            {"success": False, "error": "An error occurred during verification"}
+        )
+
+
+@app.route("/logout")
+def logout():
+    """Log the user out and clear session data."""
+    user_id = session.get("user_id")
+
+    if user_id:
+        db.delete_discord_user(user_id)
+
+    session.clear()
+    return redirect(url_for("index"))
+
+
+@app.route("/api/guild/<guild_id>")
+@login_required
+def get_guild_info(guild_id):
+    """Get information about a specific guild."""
+    try:
+        user_id = session.get("user_id")
+        user_token = session.get("user_token")
+
+        # Verify user has access to this guild
+        guild_headers = {
+            "Authorization": f"Bearer {user_token}",
+            "User-Agent": OAUTH_USER_AGENT,
+            "Accept": "application/json",
+        }
+
+        # Check if user has access to this guild
+        cached_servers = db.get_cached_servers(user_id) or []  # Ensure it's not None
+        server_ids = (
+            [server["id"] for server in cached_servers] if cached_servers else []
+        )
+
+        if guild_id not in server_ids:
+            try:
+                guild_request = urllib.request.Request(
+                    "https://discord.com/api/users/@me/guilds",
+                    headers=guild_headers,
+                )
+
+                with urllib.request.urlopen(guild_request) as response:
+                    guilds = json.loads(response.read().decode("utf-8"))
+
+                if not any(guild["id"] == guild_id for guild in guilds):
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "You don't have access to this guild",
+                            }
+                        ),
+                        403,
+                    )
+
+                # Verify the user has admin permissions
+                for guild in guilds:
+                    if guild["id"] == guild_id:
+                        permissions = int(guild.get("permissions", 0))
+                        is_admin = (
+                            permissions & 0x20
+                        ) == 0x20  # Check for ADMINISTRATOR permission
+
+                        if not is_admin:
+                            return (
+                                jsonify(
+                                    {
+                                        "success": False,
+                                        "error": "You need administrator permissions",
+                                    }
+                                ),
+                                403,
+                            )
+            except Exception as e:
+                logger.error("Error checking guild access: %s", str(e))
+                return (
+                    jsonify(
+                        {"success": False, "error": "Error validating guild access"}
+                    ),
+                    500,
+                )
+
+        # Check if bot is in guild
+        bot_in_guild = False
+        guild_channels = []
+        guild_roles = []
+
+        if bot.is_ready():
+            try:
+                guild = bot.get_guild(int(guild_id))
+                if guild:
+                    bot_in_guild = True
+
+                    # Get text channels
+                    for channel in guild.text_channels:
+                        guild_channels.append(
+                            {
+                                "id": str(channel.id),
+                                "name": channel.name,
+                                "position": channel.position,
+                            }
+                        )
+
+                    # Sort channels by position
+                    guild_channels.sort(key=lambda c: c["position"])
+
+                    # Get roles that bot can manage
+                    bot_member = guild.get_member(bot.user.id)
+                    if bot_member:  # Check if bot_member exists
+                        for role in guild.roles:
+                            # Skip @everyone role and roles higher than bot's highest role
+                            if not role.is_default() and role < bot_member.top_role:
+                                guild_roles.append(
+                                    {
+                                        "id": str(role.id),
+                                        "name": role.name,
+                                        "color": str(role.color),
+                                        "position": role.position,
+                                    }
+                                )
+
+                    # Sort roles by position (highest position first)
+                    guild_roles.sort(key=lambda r: r["position"], reverse=True)
+            except Exception as e:
+                logger.error("Error getting guild data: %s", str(e))
+                # Continue execution to return what we have
+
+        if not bot_in_guild:
+            return jsonify(
+                {
+                    "success": True,
+                    "bot_in_guild": False,
+                    "guild_id": guild_id,
+                    "invite_url": f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&permissions=2415919104&response_type=code&redirect_uri={REDIRECT_URI}&scope=guilds+identify+bot&guild_id={guild_id}",
+                }
+            )
+
+        # Get verification messages
+        verifications = []
+        try:
+            conn = db.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT * FROM verification_messages 
+                WHERE guild_id = ?
+                """,
+                (guild_id,),
+            )
+
+            verification_rows = cursor.fetchall()
+
+            for row in verification_rows:
+                verifications.append(
+                    {
+                        "id": row["id"],
+                        "channel_id": row["channel_id"],
+                        "role_id": row["role_id"],
+                        "captcha_type": (
+                            row["captcha_type"]
+                            if "captcha_type" in row.keys()
+                            else "hcaptcha"
+                        ),
+                        "embed_title": (
+                            row["embed_title"]
+                            if "embed_title" in row.keys()
+                            else "Verification Required"
+                        ),
+                        "embed_description": (
+                            row["embed_description"]
+                            if "embed_description" in row.keys()
+                            else ""
+                        ),
+                        "embed_color": (
+                            row["embed_color"]
+                            if "embed_color" in row.keys()
+                            else "blue"
+                        ),
+                        "embed_footer": (
+                            row["embed_footer"] if "embed_footer" in row.keys() else ""
+                        ),
+                        "created_at": row["created_at"],
+                    }
+                )
+
+            conn.close()
+        except Exception as e:
+            logger.error("Error getting verifications: %s", str(e))
+            # Continue execution to return what we have
+
+        return jsonify(
+            {
+                "success": True,
+                "bot_in_guild": True,
+                "guild_id": guild_id,
+                "channels": guild_channels,
+                "roles": guild_roles,
+                "verifications": verifications,
+            }
+        )
+
+    except Exception as e:
+        logger.error("Error getting guild info: %s", str(e))
+        return (
+            jsonify(
+                {"success": False, "error": "Could not retrieve guild information"}
+            ),
+            500,
+        )
+
+
+@app.route("/api/guild/<guild_id>/verification", methods=["POST"])
+@login_required
+def create_guild_verification(guild_id):
+    """Create or update a verification message."""
+    try:
+        data = request.json
+
+        channel_id = data.get("channel_id")
+        role_id = data.get("role_id")
+        captcha_type = data.get("captcha_type", "hcaptcha")
+        embed_title = data.get("embed_title", "Verification Required")
+        embed_description = data.get("embed_description")
+        embed_color = data.get("embed_color", "blue")
+        embed_footer = data.get("embed_footer")
+
+        if not channel_id or not role_id:
+            return jsonify({"success": False, "error": "Missing required fields"}), 400
+
+        # Verify user has admin access to this guild
+        user_id = session.get("user_id")
+        cached_servers = db.get_cached_servers(user_id)
+        has_access = False
+
+        if cached_servers and any(
+            server["id"] == guild_id for server in cached_servers
+        ):
+            has_access = True
+
+        if not has_access:
+            return (
+                jsonify(
+                    {"success": False, "error": "You don't have access to this guild"}
+                ),
+                403,
+            )
+
+        # Verify bot is in guild and can access channel and role
+        if not bot.is_ready():
+            return jsonify({"success": False, "error": "Bot is not connected"}), 503
+
+        guild = bot.get_guild(int(guild_id))
+        if not guild:
+            return jsonify({"success": False, "error": "Bot is not in this guild"}), 404
+
+        channel = guild.get_channel(int(channel_id))
+        if not channel or not isinstance(channel, discord.TextChannel):
+            return jsonify({"success": False, "error": "Invalid channel"}), 400
+
+        role = guild.get_role(int(role_id))
+        if not role:
+            return jsonify({"success": False, "error": "Invalid role"}), 400
+
+        bot_member = guild.get_member(bot.user.id)
+        if bot_member.top_role <= role:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": f"Bot cannot assign the {role.name} role due to role hierarchy",
+                    }
+                ),
+                400,
+            )
+
+        # Create or update verification
+        verification_id = db.create_verification(
+            guild_id,
+            channel_id,
+            role_id,
+            captcha_type,
+            embed_title,
+            embed_description,
+            embed_color,
+            embed_footer,
+        )
+
+        # Get the verification data to use for the message
+        verification = db.get_verification(verification_id)
+
+        # Default description if none provided
+        default_description = (
+            f"To access the rest of the server, please verify you're not a robot.\n"
+            f"Click the button below to start the verification process.\n\n"
+            f"Once verified, you'll be given the {role.mention} role."
+        )
+
+        description = verification.get("embed_description") or default_description
+        title = verification.get("embed_title") or "Verification Required"
+        color_name = verification.get("embed_color") or "blue"
+        footer = verification.get("embed_footer")
+
+        # Convert color name to discord.Color
+        color_map = {
+            "blue": discord.Color.blue(),
+            "red": discord.Color.red(),
+            "green": discord.Color.green(),
+            "gold": discord.Color.gold(),
+            "purple": discord.Color.purple(),
+            "orange": discord.Color.orange(),
+            "blurple": discord.Color.blurple(),
+        }
+
+        color = color_map.get(color_name.lower(), discord.Color.blue())
+
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=color,
+        )
+
+        if footer:
+            embed.set_footer(text=footer)
+
+        # Send the verification message using the bot's function
+        from src.bot import send_verification_message
+
+        # Create embed data dictionary
+        embed_data = {
+            "title": title,
+            "description": description,
+            "color": color_name,
+            "footer": footer,
+        }
+
+        # Call the function directly using the bot's event loop
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                send_verification_message(channel_id, embed_data, bot.loop), bot.loop
+            )
+            success, result = future.result(timeout=15)
+            
+            if not success:
+                logger.error(f"Bot reported error: {result}")
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": f"Failed to send verification message: {result}",
+                        }
+                    ),
+                    400,  # Using 400 instead of 500 since this isn't a server error
+                )
+                
+            # If we're here, the message was sent successfully
+            logger.info(f"Successfully created verification with message ID: {result}")
+        except Exception as e:
+            logger.error(f"Error executing send_verification_message: {str(e)}")
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": f"Error sending verification message: {str(e)}",
+                    }
+                ),
+                500,
+            )
+
+        return jsonify({"success": True, "verification_id": verification_id})
+
+    except Exception as e:
+        logger.error("Error creating verification: %s", str(e))
+        return (
+            jsonify({"success": False, "error": "Could not create verification"}),
+            500,
+        )
+
+
+@app.route("/api/guild/<guild_id>/verification/<verification_id>", methods=["PUT"])
+@login_required
+def update_guild_verification(guild_id, verification_id):
+    """Update an existing verification message."""
+    try:
+        data = request.json
+
+        role_id = data.get("role_id")
+        captcha_type = data.get("captcha_type")
+        embed_title = data.get("embed_title")
+        embed_description = data.get("embed_description")
+        embed_color = data.get("embed_color")
+        embed_footer = data.get("embed_footer")
+        update_message = data.get("update_message", False)
+
+        # Get existing verification
+        verification = db.get_verification(verification_id)
+        if not verification:
+            return jsonify({"success": False, "error": "Verification not found"}), 404
+
+        # Verify this verification belongs to this guild
+        if verification["guild_id"] != guild_id:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Verification doesn't belong to this guild",
+                    }
+                ),
+                403,
+            )
+
+        # Verify user has admin access to this guild
+        user_id = session.get("user_id")
+        cached_servers = db.get_cached_servers(user_id)
+        has_access = False
+
+        if cached_servers and any(
+            server["id"] == guild_id for server in cached_servers
+        ):
+            has_access = True
+
+        if not has_access:
+            return (
+                jsonify(
+                    {"success": False, "error": "You don't have access to this guild"}
+                ),
+                403,
+            )
+
+        # Check bot access
+        if not bot.is_ready():
+            return jsonify({"success": False, "error": "Bot is not connected"}), 503
+
+        guild = bot.get_guild(int(guild_id))
+        if not guild:
+            return jsonify({"success": False, "error": "Bot is not in this guild"}), 404
+
+        # If role is being updated, verify the new role
+        channel_id = verification["channel_id"]
+        channel = guild.get_channel(int(channel_id))
+
+        if not channel or not isinstance(channel, discord.TextChannel):
+            return jsonify({"success": False, "error": "Channel no longer exists"}), 400
+
+        if role_id:
+            role = guild.get_role(int(role_id))
+            if not role:
+                return jsonify({"success": False, "error": "Invalid role"}), 400
+
+            bot_member = guild.get_member(bot.user.id)
+            if bot_member.top_role <= role:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": f"Bot cannot assign the {role.name} role due to role hierarchy",
+                        }
+                    ),
+                    400,
+                )
+        else:
+            # Use existing role ID if none provided
+            role_id = verification["role_id"]
+            role = guild.get_role(int(role_id))
+
+        # Update verification in database
+        conn = db.get_connection()
+        cursor = conn.cursor()
+
+        # Only update fields that were provided
+        update_fields = []
+        update_values = []
+
+        if role_id:
+            update_fields.append("role_id = ?")
+            update_values.append(role_id)
+
+        if captcha_type:
+            update_fields.append("captcha_type = ?")
+            update_values.append(captcha_type)
+
+        if embed_title:
+            update_fields.append("embed_title = ?")
+            update_values.append(embed_title)
+
+        if embed_description is not None:  # Allow empty string
+            update_fields.append("embed_description = ?")
+            update_values.append(embed_description)
+
+        if embed_color:
+            update_fields.append("embed_color = ?")
+            update_values.append(embed_color)
+
+        if embed_footer is not None:  # Allow empty string
+            update_fields.append("embed_footer = ?")
+            update_values.append(embed_footer)
+
+        if update_fields:
+            update_sql = f"UPDATE verification_messages SET {', '.join(update_fields)} WHERE id = ?"
+            update_values.append(verification_id)
+
+            cursor.execute(update_sql, update_values)
+            conn.commit()
+
+        conn.close()
+
+        # If requested, update the message in Discord
+        if update_message:
+            # Get updated verification data
+            updated_verification = db.get_verification(verification_id)
+
+            # Default description if none provided
+            default_description = (
+                f"To access the rest of the server, please verify you're not a robot.\n"
+                f"Click the button below to start the verification process.\n\n"
+                f"Once verified, you'll be given the {role.mention} role."
+            )
+
+            description = (
+                updated_verification.get("embed_description") or default_description
+            )
+            title = updated_verification.get("embed_title") or "Verification Required"
+            color_name = updated_verification.get("embed_color") or "blue"
+            footer = updated_verification.get("embed_footer")
+
+            # Create embed data dictionary
+            embed_data = {
+                "title": title,
+                "description": description,
+                "color": color_name,
+                "footer": footer,
+            }
+
+            # Call the function directly using the bot's event loop
+            success, result = asyncio.run_coroutine_threadsafe(
+                send_verification_message(channel_id, embed_data, bot.loop), bot.loop
+            ).result(timeout=15)
+
+            if not success:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": f"Failed to send verification message: {result}",
+                        }
+                    ),
+                    400,  # Using 400 instead of 500 since this isn't a server error
+                )
+                
+            # If we're here, the message was sent successfully
+            logger.info(f"Successfully updated verification with message ID: {result}")
+
+        return jsonify({"success": True, "verification_id": verification_id})
+
+    except Exception as e:
+        logger.error("Error updating verification: %s", str(e))
+        return (
+            jsonify({"success": False, "error": "Could not update verification"}),
+            500,
+        )
+
+
+@app.route("/api/guild/<guild_id>/verification/<verification_id>", methods=["DELETE"])
+@login_required
+def delete_guild_verification(guild_id, verification_id):
+    """Delete a verification message."""
+    try:
+        # Get existing verification
+        verification = db.get_verification(verification_id)
+        if not verification:
+            return jsonify({"success": False, "error": "Verification not found"}), 404
+
+        # Verify this verification belongs to this guild
+        if verification["guild_id"] != guild_id:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Verification doesn't belong to this guild",
+                    }
+                ),
+                403,
+            )
+
+        # Verify user has admin access to this guild
+        user_id = session.get("user_id")
+        cached_servers = db.get_cached_servers(user_id)
+        has_access = False
+
+        if cached_servers and any(
+            server["id"] == guild_id for server in cached_servers
+        ):
+            has_access = True
+
+        if not has_access:
+            return (
+                jsonify(
+                    {"success": False, "error": "You don't have access to this guild"}
+                ),
+                403,
+            )
+
+        # Delete verification from database
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # First delete any completed verifications associated with this verification message
+        cursor.execute(
+            "DELETE FROM verification_completions WHERE verification_id = ?",
+            (verification_id,)
+        )
+        
+        # Then delete the verification message itself
+        cursor.execute(
+            "DELETE FROM verification_messages WHERE id = ?",
+            (verification_id,)
+        )
+        
+        conn.commit()
+        conn.close()
+
+        logger.info(f"Successfully deleted verification message {verification_id}")
+        return jsonify({"success": True})
+
+    except Exception as e:
+        logger.error("Error deleting verification: %s", str(e))
+        return (
+            jsonify({"success": False, "error": "Could not delete verification"}),
+            500,
+        )
+
+
+async def run_app():
     """
-    Entry point for the application.
+    Run the Flask application asynchronously.
 
     Returns:
         None
     """
 
-    asyncio.run(run_app())
+    def run_flask():
+        app.run(host="0.0.0.0", port=5000, debug=False)
 
-
-if __name__ == "__main__":
-    main()
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, run_flask)

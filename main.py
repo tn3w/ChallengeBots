@@ -1,6 +1,12 @@
 import asyncio
 
-import uvloop
+try:
+    import uvloop
+
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+except ImportError:
+    print("uvloop not available, using default asyncio loop")
+
 from src.app import run_app
 from src.bot import run_bot
 
@@ -22,5 +28,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.set_event_loop(uvloop.new_event_loop())
     asyncio.run(main())
