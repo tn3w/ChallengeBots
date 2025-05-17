@@ -1,156 +1,135 @@
 import os
-import time
-import random
+import traceback
+import logging
 import asyncio
-from io import BytesIO
-from typing import Optional
-from urllib.parse import quote
 
 import discord
-from PIL import Image
-from discord import app_commands
-from discord.ext import commands
+from discord import app_commands, ui
+from discord.ext import commands, tasks
 
-from src.logger import log
-from src.discordauth import User
-from src.files import CURRENT_DIRECTORY_PATH
-from src.database import get_database_decrypted
-from src.utils import (
-    load_dotenv, generate_secure_string, cache_with_ttl,
-    http_request
-)
+from src.utils import load_dotenv
+from src.database import Database
 
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-REDIRECT_URI = quote("https://" + os.getenv("HOSTNAME", ""))
+
+bot = commands.Bot(command_prefix="/", intents=discord.Intents.default())
 
 
-intents = discord.Intents.default()
-intents.members = True
-
-bot = commands.Bot(command_prefix = "/", intents = intents)
-
-
-def has_role(role_id: int, guild_id: Optional[int] = None,
-             member_id: Optional[int] = None, guild: Optional[discord.Guild] = None,
-             member: Optional[discord.Member] = None) -> bool:
+class VerifyButton(ui.Button):
     """
-    Checks if a member has a specific role in a Discord guild.
-
-    This function determines whether a member is already verified by checking
-    if they possess the specified role. It can retrieve the member either by
-    providing a member object directly or by using the guild ID and member ID.
-
-    Args:
-        role_id (int): The ID of the role to check for verification.
-        guild_id (Optional[int]): The ID of the guild where the member resides.
-                                  Required if `guild` is not provided.
-        member_id (Optional[int]): The ID of the member to check for the role.
-                                   Required if `member` is not provided.
-        guild (Optional[discord.Guild]): An optional Discord guild object.
-                                          If provided, `guild_id` is not needed.
-        member (Optional[discord.Member]): An optional Discord member object.
-                                           If provided, `member_id` is not needed.
-
-    Returns:
-        bool: True if the member has the specified role, False otherwise.
+    A button for the verification process.
     """
 
-    if member is None:
-        if guild is None:
-            guild = bot.get_guild(guild_id)
-        member = guild.get_member(member_id)
+    def __init__(self):
+        super().__init__(
+            label="Verify", style=discord.ButtonStyle.primary, custom_id="verify_button"
+        )
 
-    return member.get_role(role_id) is not None
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            db = Database()
+
+            guild_id = str(interaction.guild_id)
+            channel_id = str(interaction.channel_id)
+
+            verification_data = db.get_verification_by_channel(guild_id, channel_id)
+            if not verification_data:
+                await interaction.response.send_message(
+                    "Error: Could not find verification information for this channel. "
+                    "Please contact an administrator.",
+                    ephemeral=True,
+                )
+                return
+
+            verification_id = verification_data["id"]
+
+            if "role_id" in verification_data and verification_data["role_id"]:
+                role_id = int(verification_data["role_id"])
+                member = interaction.user
+                if any(role.id == role_id for role in member.roles):
+                    await interaction.response.send_message(
+                        "You already have the role associated with this verification.",
+                        ephemeral=True,
+                    )
+                    return
+
+            if db.check_rate_limit(str(interaction.user.id), "verify_button", 2):
+                return await interaction.response.send_message(
+                    "You're clicking too fast. Please wait a moment before trying again.",
+                    ephemeral=True,
+                )
+
+            username = interaction.user.name
+            discriminator = (
+                interaction.user.discriminator
+                if hasattr(interaction.user, "discriminator")
+                else "0"
+            )
+
+            if interaction.user.avatar:
+                avatar_url = interaction.user.avatar.url
+            elif (
+                hasattr(interaction.user, "default_avatar")
+                and interaction.user.default_avatar
+            ):
+                avatar_url = interaction.user.default_avatar.url
+            else:
+                avatar_url = (
+                    "https://cdn.discordapp.com/embed/avatars/"
+                    f"{int(discriminator) % 5}.png"
+                )
+
+            user_token = db.create_user_token(
+                str(interaction.user.id),
+                verification_id,
+                username,
+                discriminator,
+                avatar_url,
+            )
+
+            verification_url = (
+                f"http://localhost:5000/verify#{verification_id}.{user_token}"
+            )
+
+            await interaction.response.send_message(
+                f"Click this link to verify you're not a robot: {verification_url}\n"
+                f"This link is valid for 20 minutes.",
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.error(
+                "Error in VerifyButton callback: %s\n%s", str(e), traceback.format_exc()
+            )
+            try:
+                await interaction.response.send_message(
+                    "An error occurred while processing your verification. "
+                    "Please try again later.",
+                    ephemeral=True,
+                )
+            except discord.errors.InteractionResponded:
+                pass
 
 
-def verify_user(guild_id: int, role_id: int, user: User, was_verified: bool = False) -> bool:
+class VerificationView(ui.View):
     """
-    Verifies a user by assigning them a specific role in a Discord guild.
-
-    Args:
-        guild_id (int): The ID of the Discord guild where the user is to be verified.
-        role_id (int): The ID of the role to assign to the user upon verification.
-        user (User): The User object representing the user to be verified.
-        was_verified (bool): A flag indicating whether the user was previously verified.
-                             Defaults to False.
-
-    Returns:
-        bool: True if the user was successfully verified (role assigned or already verified),
-              False if the verification process failed.
+    A view for the verification button.
     """
 
-    guild = bot.get_guild(guild_id)
-    if guild:
-        role = guild.get_role(role_id)
-        member = guild.get_member(user.user_id)
-
-        if member and role:
-            if not was_verified and has_role(role_id, member = member):
-                return True
-
-            bot.loop.create_task(member.add_roles(role))
-            return True
-
-    return False
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(VerifyButton())
 
 
-def get_oauth_url(state: str, scope: str = "identify+guilds") -> str:
-    """
-    Constructs the OAuth2 authorization URL for Discord.
-
-    Args:
-        state (str): A unique string used to maintain state between the 
-                     request and callback. It is recommended to use a 
-                     random value to prevent CSRF attacks.
-
-    Returns:
-        str: The OAuth2 authorization URL for Discord.
-    """
-
-    return (
-        f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&redirect_uri="
-        f"{REDIRECT_URI}%2Fauth&response_type=code&scope={scope}&state={state}"
-    )
-
-
-@cache_with_ttl(10)
-async def get_guilds() -> int:
-    """
-    Returns the approximate number of guilds the bot is
-    currently in, with a cache TTL of 10 seconds.
-
-    Returns:
-        int: The number of guilds the bot is currently in.
-    """
-
-    return bot.guilds
-
-
-@cache_with_ttl(5)
-async def check_latency() -> int:
-    """
-    Measures the latency of a request to the Discord API.
-
-    Returns:
-        int: The latency of the API request in milliseconds.
-    """
-
-    start_time = time.perf_counter()
-    http_request("https://discord.com/api", is_json = True)
-    end_time = time.perf_counter()
-
-    return round((end_time - start_time) * 1000)
-
-
-@bot.tree.command(name = "ping", description = "View the latency of the bot")
+@bot.tree.command(name="ping", description="View the latency of the bot")
 async def ping(interaction: discord.Interaction) -> None:
     """
     Handles the "ping" command to check bot latency.
-    
+
     Args:
         interaction (discord.Interaction): The interaction object for the command.
 
@@ -158,169 +137,271 @@ async def ping(interaction: discord.Interaction) -> None:
         None: Sends a message with the bot's API latency in milliseconds.
     """
 
-    api_latency = await check_latency()
+    await interaction.response.send_message(
+        f":ping_pong: Pong! Bot latency: {round(bot.latency * 1000)}ms", ephemeral=True
+    )
 
-    await interaction.response.send_message(f"**🏓 Pong!**\nAPI: {api_latency}ms", ephemeral=True)
 
-
-@bot.tree.command(name="add", description="Set up verification for a role")
-@app_commands.describe(role="Role to assign after verification")
-async def add(interaction: discord.Interaction, role: discord.Role) -> None:
+@bot.tree.command(
+    name="create", description="Create a verification message in the current channel"
+)
+@app_commands.describe(role="The role to assign to verified users")
+async def create(interaction: discord.Interaction, role: discord.Role) -> None:
     """
-    Handles the "add" command to enable verification for a specified role.
-    
+    Creates a verification message in the current channel with a button for users to verify.
+
     Args:
         interaction (discord.Interaction): The interaction object for the command.
-        role (discord.Role): The role to assign upon successful verification.
-        
-    Returns:
-        None: Sends an embedded message with a verification link if the user is an admin.
-        Otherwise, sends an ephemeral error message.
-    """
+        role (discord.Role): The role to assign to users who verify.
 
+    Returns:
+        None: Sends a verification message in the channel.
+    """
     if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "You do not have permission to use this command.", ephemeral=True
+        return await interaction.response.send_message(
+            "You need administrator permissions to use this command.", ephemeral=True
         )
+
+    if role.is_default():
+        return await interaction.response.send_message(
+            "You cannot use the @everyone role for verification. "
+            "Please select a specific role.",
+            ephemeral=True,
+        )
+
+    bot_member = interaction.guild.get_member(bot.user.id)
+    if not bot_member.guild_permissions.manage_roles:
+        return await interaction.response.send_message(
+            "I don't have the 'Manage Roles' permission in this server. "
+            "Please give me this permission and try again.",
+            ephemeral=True,
+        )
+
+    if bot_member.top_role <= role:
+        return await interaction.response.send_message(
+            f"I cannot assign the {role.name} role because it is higher than or equal to "
+            f"my highest role. Please move my role above the {role.name} "
+            "role in the server settings.",
+            ephemeral=True,
+        )
+
+    channel = interaction.channel
+
+    db = Database()
+
+    try:
+        verification_id = db.create_verification(
+            str(channel.guild.id), str(channel.id), str(role.id)
+        )
+
+        verification = db.get_verification(verification_id)
+
+        # Default description if none provided
+        default_description = (
+            f"To access the rest of the server, please verify you're not a robot.\n"
+            f"Click the button below to start the verification process.\n\n"
+            f"Once verified, you'll be given the {role.mention} role."
+        )
+
+        description = verification.get("embed_description") or default_description
+        title = verification.get("embed_title") or "Verification Required"
+        color_name = verification.get("embed_color") or "blue"
+        footer = verification.get("embed_footer")
+
+        # Convert color name to discord.Color
+        color_map = {
+            "blue": discord.Color.blue(),
+            "red": discord.Color.red(),
+            "green": discord.Color.green(),
+            "gold": discord.Color.gold(),
+            "purple": discord.Color.purple(),
+            "orange": discord.Color.orange(),
+            "blurple": discord.Color.blurple(),
+        }
+
+        color = color_map.get(color_name.lower(), discord.Color.blue())
+
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=color,
+        )
+
+        if footer:
+            embed.set_footer(text=footer)
+
+        view = VerificationView()
+        await interaction.response.send_message(embed=embed, view=view)
+    except Exception as e:
+        await interaction.followup.send(f"An error occurred: {str(e)}", ephemeral=True)
+
+
+@tasks.loop(seconds=5)
+async def process_pending_verifications():
+    """
+    Process pending verifications from the database.
+    This task runs every 5 seconds to check for new verifications.
+    """
+    if not bot.is_ready():
         return
 
-    if role == interaction.guild.default_role:
-        await interaction.response.send_message(
-            "The @everyone role is not permitted.", ephemeral=True
-        )
-        return
+    db = Database()
+    pending = db.get_pending_verifications(limit=10)
 
-    states = get_database_decrypted("states", None)
+    for verification in pending:
+        try:
+            verification_id = verification["verification_id"]
+            member_id = verification["member_id"]
+            completion_id = verification["id"]
 
-    state = None
-    value = (interaction.guild_id, role.id)
-    if (state_key := states.get_key(value)) is not None:
-        state = state_key
-    else:
-        while not state or states.exists(state):
-            state = generate_secure_string(20)
-
-    states[state] = (interaction.guild_id, role.id)
-
-    embed = discord.Embed(
-        title = "🤖Beep beop Boop?",
-        description = "Click the button below to verify you are not a robot.",
-        color = discord.Color.blue()
-    )
-    view = discord.ui.View()
-    button = discord.ui.Button(label = "Verify", url = get_oauth_url(state, "identify"))
-    view.add_item(button)
-
-    await interaction.response.send_message(embed=embed, view=view)
-
-
-async def update_banner() -> None:
-    """
-    Periodically updates the bot's banner with randomized image placements.
-
-    Returns:
-        None
-    """
-
-    small_image = Image.open(os.path.join(CURRENT_DIRECTORY_PATH, "src", "assets", "icon.png"))
-    small_image = small_image.resize((50, 50), Image.LANCZOS)
-
-    while True:
-        image_positions = []
-
-        def overlaps(x: int, y: int, width: int, height: int) -> bool:
-            """
-            Checks if a new image placement overlaps with existing placements.
-            
-            Parameters:
-                x, y (int): Coordinates of the top-left corner of the new image.
-                width, height (int): Width and height of the new image.
-
-            Returns:
-                bool: True if overlapping, False otherwise.
-            """
-
-            for (px, py, pw, ph) in image_positions:
-                if (x < px + pw and x + width > px and y < py + ph and y + height > py):
-                    return True
-
-            return False
-
-        banner = Image.new("RGB", (600, 240), "#181818")
-        for _ in range(13):
-            max_attempts = 100
-            for _ in range(max_attempts):
-                rotated_image = small_image.rotate(random.uniform(0, 360), expand=True)
-                image_box = rotated_image.getbbox()
-
-                max_x = 600 - image_box[2]
-                max_y = 240 - image_box[3]
-
-                if max_x <= 0 or max_y <= 0:
-                    continue
-
-                x = random.randint(0, max_x)
-                y = random.randint(0, max_y)
-
-                if not overlaps(x, y, image_box[2], image_box[3]):
-                    banner.paste(rotated_image, (x, y), rotated_image)
-                    image_positions.append((x, y, image_box[2], image_box[3]))
-                    break
-
-        with BytesIO() as banner_buffer:
-            banner.save(banner_buffer, format="PNG")
-            banner_buffer.seek(0)
+            guild = bot.get_guild(int(verification["guild_id"]))
+            if not guild:
+                db.mark_verification_processed(
+                    completion_id, member_id, verification_id
+                )
+                continue
 
             try:
-                await bot.user.edit(banner=banner_buffer.read())
-                log("Banner updated.")
-            except Exception:
-                log("Error updating banner.", level = 4)
+                member = await guild.fetch_member(int(member_id))
+            except discord.NotFound:
+                db.mark_verification_processed(
+                    completion_id, member_id, verification_id
+                )
+                continue
 
-        await asyncio.sleep(3600) # 1 hour
+            role = guild.get_role(int(verification["role_id"]))
+            if not role:
+                db.mark_verification_processed(
+                    completion_id, member_id, verification_id
+                )
+                continue
+
+            await member.add_roles(
+                role, reason="Verified through the verification system"
+            )
+
+            try:
+                await member.send(
+                    f"Verification Complete: You have been verified in **{guild.name}** "
+                    f"and given the **{role.name}** role."
+                )
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
+            db.mark_verification_processed(completion_id, member_id, verification_id)
+
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            continue
 
 
 @bot.event
-async def on_ready() -> None:
+async def on_ready():
     """
-    Event handler triggered when the bot is ready.
-    
-    Returns:
-        None
+    Event handler that is called when the bot is ready.
     """
-
-    bot.loop.create_task(update_banner())
-
-    log(f"Logged in as {bot.user}.", level = 2)
+    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
     try:
         synced = await bot.tree.sync()
-        log(f"Synced {len(synced)} commands.")
-    except Exception:
-        log("Error syncing commands.", level = 4)
+        print(f"Synced {len(synced)} command(s)")
+    except Exception as e:
+        print(f"Failed to sync commands: {e}")
+
+    bot.add_view(VerificationView())
+
+    if not process_pending_verifications.is_running():
+        process_pending_verifications.start()
+
+    print("Bot is ready!")
 
 
-async def run_bot() -> None:
+async def send_verification_message(channel_id, embed_data, loop=None):
     """
-    Starts the bot using the specified Discord token.
+    Function to send a verification message to a specific channel.
+    This function is designed to be called from the Flask app.
+    
+    Args:
+        channel_id (str): The ID of the channel to send the message to
+        embed_data (dict): Dictionary containing embed information
+        loop (asyncio.AbstractEventLoop, optional): Event loop to use
+        
+    Returns:
+        tuple: (success, message_id_or_error)
+    """
+    try:
+        if not bot.is_ready():
+            logger.error("Bot is not ready")
+            return False, "Bot is not ready"
+            
+        channel = bot.get_channel(int(channel_id))
+        if not channel:
+            logger.error(f"Channel {channel_id} not found")
+            return False, f"Channel {channel_id} not found"
+        
+        # Create embed from data
+        color_map = {
+            "blue": discord.Color.blue(),
+            "red": discord.Color.red(),
+            "green": discord.Color.green(),
+            "gold": discord.Color.gold(),
+            "purple": discord.Color.purple(),
+            "orange": discord.Color.orange(),
+            "blurple": discord.Color.blurple(),
+        }
+        
+        color = color_map.get(
+            embed_data.get("color", "blue").lower(), discord.Color.blue()
+        )
+        
+        embed = discord.Embed(
+            title=embed_data.get("title", "Verification Required"),
+            description=embed_data.get(
+                "description", "Click the button below to verify."
+            ),
+            color=color,
+        )
+        
+        if "footer" in embed_data and embed_data["footer"]:
+            embed.set_footer(text=embed_data["footer"])
+        
+        view = VerificationView()
+        
+        # If no loop is provided, use the bot's loop
+        if loop is None:
+            loop = bot.loop
+            
+        try:
+            # Send the message using the bot's event loop
+            future = asyncio.run_coroutine_threadsafe(
+                channel.send(embed=embed, view=view), loop
+            )
+            
+            # Wait for the result with a timeout
+            message = future.result(timeout=10)
+            logger.info(f"Successfully sent verification message to channel {channel_id}, message ID: {message.id}")
+            return True, str(message.id)
+        except asyncio.TimeoutError:
+            logger.error("Timeout while sending message")
+            return False, "Timeout while sending message"
+        except Exception as e:
+            logger.error(f"Error in run_coroutine_threadsafe: {str(e)}")
+            return False, str(e)
+        
+    except Exception as e:
+        logger.error(f"Error sending verification message: {str(e)}")
+        return False, str(e)
+
+
+async def run_bot():
+    """
+    Start the Discord bot.
 
     Returns:
         None
     """
-
-    await bot.start(DISCORD_TOKEN)
-
-
-def main() -> None:
-    """
-    Entry point for the Discord bot application.
-
-    Returns:
-        None
-    """
-
-    asyncio.run(run_bot())
-
-
-if __name__ == "__main__":
-    main()
+    try:
+        await bot.start(DISCORD_TOKEN)
+    except KeyboardInterrupt:
+        await bot.close()
+    except Exception as e:
+        print(f"Error starting bot: {str(e)}")
