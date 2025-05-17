@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>ChallengeBots | Discord Human verification</title>
+        <style>
+            :root {
+                --background: #f2f2f2;
+                --box-background: #cfc7e9;
+                --text: #0a101a;
+                --hero-background:
+                    radial-gradient(
+                        circle at top left,
+                        rgba(45, 88, 255, 0.3),
+                        rgba(230, 230, 230, 0.9) 60%
+                    ),
+                    radial-gradient(
+                        circle at bottom right,
+                        rgba(45, 88, 255, 0.15),
+                        rgba(230, 230, 230, 0.9) 60%
+                    );
+                --card-shadow: rgba(0, 0, 0, 0.1);
+                --section-background: #ffffff;
+                --accent-color: #2d58ff;
+                --border-color: rgba(0, 0, 0, 0.1);
+            }
+
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --background: #0a101a;
+                    --box-background: #1a1d29;
+                    --section-background: #121620;
+                    --text: #f2f2f2;
+                    --hero-background:
+                        radial-gradient(
+                            circle at top left,
+                            rgba(45, 88, 255, 0.15),
+                            rgba(13, 17, 23, 0.9) 60%
+                        ),
+                        radial-gradient(
+                            circle at bottom right,
+                            rgba(45, 88, 255, 0.15),
+                            rgba(13, 17, 23, 0.9) 60%
+                        );
+                    --card-shadow: rgba(0, 0, 0, 0.3);
+                    --accent-color: #4d72ff;
+                    --border-color: rgba(255, 255, 255, 0.05);
+                }
+            }
+
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+                font-family: Arial, sans-serif;
+            }
+
+            body {
+                background-color: var(--background);
+                color: var(--text);
+                min-height: 100vh;
+            }
+
+            section {
+                padding: 100px;
+                width: 100%;
+            }
+
+            .servers {
+                padding: 20px 100px 20px 100px;
+            }
+
+            .hero {
+                background-image: var(--hero-background);
+                background-size: cover;
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+            }
+
+            header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                width: 100%;
+                padding: 0;
+            }
+
+            h2 {
+                text-decoration: none;
+                color: var(--text);
+            }
+
+            .logo {
+                display: flex;
+                align-items: center;
+            }
+
+            .logo img {
+                width: 40px;
+                height: 40px;
+                margin-right: 10px;
+            }
+
+            .btn {
+                padding: 10px 20px;
+                color: #fff;
+                background-color: var(--accent-color);
+                border-radius: 5px;
+                text-decoration: none;
+                transition: all 0.2s ease;
+            }
+
+            .btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 8px var(--card-shadow);
+            }
+
+            .user-info {
+                display: flex;
+                align-items: center;
+                position: relative;
+                cursor: pointer;
+            }
+
+            .user-avatar {
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                margin-right: 10px;
+            }
+
+            .user-name {
+                color: var(--text);
+                font-weight: bold;
+                margin-right: 5px;
+            }
+
+            .dropdown-arrow {
+                width: 10px;
+                height: 10px;
+                border-right: 2px solid var(--text);
+                border-bottom: 2px solid var(--text);
+                transform: rotate(45deg);
+                margin-right: 15px;
+                transition: transform 0.3s ease;
+            }
+
+            .user-info:hover .dropdown-arrow {
+                transform: rotate(-135deg);
+            }
+
+            .dropdown-menu {
+                position: absolute;
+                top: 100%;
+                right: 0;
+                background-color: var(--section-background);
+                box-shadow: 0 2px 10px var(--card-shadow);
+                border-radius: 5px;
+                min-width: 150px;
+                z-index: 100;
+                display: none;
+                opacity: 0;
+                transform: translateY(-10px);
+                transition:
+                    opacity 0.3s,
+                    transform 0.3s;
+            }
+
+            .dropdown-menu.active,
+            .user-info:hover .dropdown-menu {
+                display: block;
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            .dropdown-menu a {
+                display: block;
+                padding: 10px 15px;
+                text-decoration: none;
+                color: var(--text);
+                transition: background-color 0.2s;
+            }
+
+            .dropdown-menu a:hover {
+                background-color: var(--box-background);
+            }
+
+            main {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                width: 100%;
+                overflow: hidden;
+                flex: 1;
+                margin-top: 20px;
+            }
+
+            .left {
+                max-width: 600px;
+            }
+
+            .left h1 {
+                font-size: 2rem;
+                margin-bottom: 10px;
+            }
+
+            .left p {
+                font-size: 1.1rem;
+                margin-bottom: 20px;
+            }
+
+            .right {
+                background-color: var(--box-background);
+                border-radius: 20px;
+                box-shadow: 0 4px 10px var(--card-shadow);
+                border-radius: 10px;
+                width: 500px;
+                padding: 20px;
+                text-align: center;
+                margin-left: 40px;
+            }
+
+            .profile-image {
+                width: 75px;
+                height: 75px;
+                border-radius: 50%;
+                background-color: var(--text);
+                margin-bottom: 10px;
+            }
+
+            .captcha-user-info {
+                font-size: 1.2rem;
+                font-weight: bold;
+                margin-bottom: 20px;
+            }
+
+            .captcha {
+                height: 65px;
+            }
+
+            .features {
+                background-color: var(--section-background);
+                text-align: center;
+                padding: 80px 100px;
+            }
+
+            .features h2 {
+                margin-bottom: 40px;
+                font-size: 2rem;
+            }
+
+            .trust-badge {
+                margin-bottom: 40px;
+            }
+
+            .trust-badge span {
+                background-color: var(--accent-color);
+                padding: 5px 15px;
+                border-radius: 20px;
+                color: white;
+                font-size: 1rem;
+                display: inline-block;
+            }
+
+            .feature-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 30px;
+            }
+
+            .feature-card {
+                background-color: var(--box-background);
+                border-radius: 10px;
+                padding: 25px;
+                box-shadow: 0 4px 10px var(--card-shadow);
+                transition: transform 0.3s ease;
+            }
+
+            .feature-card:hover {
+                transform: translateY(-5px);
+            }
+
+            .feature-card h3 {
+                margin-bottom: 15px;
+                color: var(--text);
+            }
+
+            .how-it-works {
+                padding: 80px 100px;
+                background-color: var(--section-background);
+                text-align: center;
+            }
+
+            .how-it-works h2 {
+                margin-bottom: 40px;
+                font-size: 2rem;
+            }
+
+            .steps {
+                display: flex;
+                justify-content: space-between;
+                gap: 30px;
+                flex-wrap: wrap;
+            }
+
+            .step {
+                flex: 1;
+                min-width: 250px;
+                position: relative;
+                padding: 20px;
+                background-color: var(--box-background);
+                border-radius: 10px;
+                box-shadow: 0 4px 10px var(--card-shadow);
+            }
+
+            .step-number {
+                background-color: var(--accent-color);
+                color: white;
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 15px;
+                font-weight: bold;
+            }
+
+            .step h3 {
+                margin-bottom: 15px;
+            }
+
+            footer {
+                background-color: var(--section-background);
+                padding: 40px 100px;
+                color: var(--text);
+                border-top: 1px solid var(--border-color);
+            }
+
+            .footer-content {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 20px;
+            }
+
+            .links {
+                display: flex;
+                gap: 20px;
+            }
+
+            .links a {
+                color: var(--text);
+                text-decoration: none;
+                transition: color 0.3s ease;
+            }
+
+            .links a:hover {
+                color: var(--accent-color);
+            }
+
+            .copyright {
+                text-align: center;
+                font-size: 0.9rem;
+                color: var(--text);
+                opacity: 0.7;
+            }
+
+            .scroll-down {
+                text-align: center;
+                margin-bottom: 30px;
+                cursor: pointer;
+                animation: bounce 2s infinite;
+            }
+
+            .scroll-down svg {
+                width: 40px;
+                height: 40px;
+                fill: var(--text);
+                transition: fill 0.3s ease;
+            }
+
+            .scroll-down:hover svg {
+                fill: var(--accent-color);
+            }
+
+            @keyframes bounce {
+                0%,
+                20%,
+                50%,
+                80%,
+                100% {
+                    transform: translateY(0);
+                }
+                40% {
+                    transform: translateY(-10px);
+                }
+                60% {
+                    transform: translateY(-5px);
+                }
+            }
+
+            @media (prefers-color-scheme: dark) {
+                .hero {
+                    background-color: var(--section-background);
+                }
+            }
+
+            @media (max-width: 865px) {
+                section {
+                    padding: 50px;
+                }
+
+                main {
+                    margin-top: 50px;
+                }
+            }
+
+            @media (max-width: 768px) {
+                main {
+                    flex-direction: column;
+                    padding-bottom: 60px;
+                }
+
+                .right {
+                    width: 100%;
+                    margin-left: 0;
+                    margin-top: 40px;
+                }
+
+                .btn {
+                    padding: 8px 16px;
+                    font-size: 1rem;
+                }
+
+                .left {
+                    max-width: unset;
+                }
+
+                .left h1 {
+                    font-size: 1.8rem;
+                }
+
+                .left p {
+                    font-size: 1rem;
+                }
+            }
+
+            @media (max-width: 480px) {
+                section {
+                    padding: 20px;
+                }
+
+                .left h1 {
+                    font-size: 1.6rem;
+                }
+
+                .left p {
+                    font-size: 0.9rem;
+                }
+
+                .right {
+                    padding: 15px;
+                }
+
+                .profile-image {
+                    width: 60px;
+                    height: 60px;
+                }
+
+                .user-info {
+                    font-size: 1rem;
+                }
+
+                .features h2,
+                .how-it-works h2 {
+                    font-size: 1.6rem;
+                }
+            }
+
+            @media (max-width: 360px) {
+                .dash {
+                    padding: unset;
+                    background-color: unset;
+                }
+
+                h2 {
+                    font-size: 1.1rem;
+                }
+
+                .captcha {
+                    overflow: hidden;
+                }
+            }
+
+            @media (max-width: 768px) {
+                .features,
+                .how-it-works,
+                footer {
+                    padding: 50px;
+                }
+
+                .steps {
+                    flex-direction: column;
+                }
+
+                .footer-content {
+                    flex-direction: column;
+                    gap: 20px;
+                }
+            }
+
+            @media (max-width: 480px) {
+                .features,
+                .how-it-works,
+                footer {
+                    padding: 30px 20px;
+                }
+
+                .features h2,
+                .how-it-works h2 {
+                    font-size: 1.6rem;
+                }
+            }
+
+            @media (max-width: 576px) {
+                header {
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 15px;
+                    padding: 20px;
+                }
+
+                .logo h2 {
+                    font-size: 1.3rem;
+                }
+
+                .logo img {
+                    width: 30px;
+                    height: 30px;
+                }
+
+                #user-auth-section .user-info {
+                    flex-direction: row;
+                    align-items: center;
+                    justify-content: center;
+                    width: 100%;
+                }
+
+                .user-avatar {
+                    margin-right: 10px;
+                }
+
+                .user-name {
+                    margin-right: 5px;
+                    font-size: 0.9rem;
+                }
+
+                .dropdown-menu {
+                    width: 100%;
+                    text-align: center;
+                }
+
+                .btn.login-btn {
+                    font-size: 0.9rem;
+                    padding: 8px 16px;
+                }
+            }
+        </style>
+        <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+    </head>
+    <body>
+        <section class="hero">
+            <header>
+                <a href="{{ request.base_url }}" class="logo">
+                    <img
+                        src="data:image/webp;base64,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"
+                        alt="ChallengeBots Logo"
+                    />
+                    <h2>ChallengeBots</h2>
+                </a>
+                <div id="user-auth-section">
+                    <a
+                        href="https://discord.com/oauth2/authorize?client_id={{ client_id }}&permissions=0&response_type=code&redirect_uri={{ request.base_url }}auth&scope=identify+guilds"
+                        class="btn login-btn"
+                        >Login with Discord</a
+                    >
+                </div>
+            </header>
+            <main>
+                <div class="left">
+                    <h1>Human Verification for Your Discord Server</h1>
+                    <p>
+                        ChallengeBots makes it easy to protect your favorite community from
+                        automated raids and scam bots.
+                    </p>
+                    <div class="buttons">
+                        <a
+                            target="_blank"
+                            href="https://discord.com/oauth2/authorize?client_id={{ client_id }}&permissions=2415919104&response_type=code&redirect_uri={{ request.base_url }}%2Fauth&integration_type=0&scope=guilds+identify+bot"
+                            class="btn"
+                            >Invite</a
+                        >
+                        <a target="_blank" href="https://github.com/tn3w/ChallengeBots" class="btn"
+                            >View Source Code</a
+                        >
+                    </div>
+                </div>
+                <div class="right">
+                    <img
+                        class="profile-image"
+                        src="https://cdn.discordapp.com/embed/avatars/0.png"
+                        alt="Discord Profile Avatar"
+                    />
+                    <div class="captcha-user-info">coolbro_</div>
+                    <div class="captcha">
+                        <div class="h-captcha" data-sitekey="{{ site_key }}"></div>
+                    </div>
+                </div>
+            </main>
+            <div class="scroll-down" id="scrollDown">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                </svg>
+            </div>
+        </section>
+
+        <section class="features">
+            <h2>Why choose ChallengeBots?</h2>
+            <div class="trust-badge">
+                <span
+                    >Trusted by <strong>{{ guild_count }}</strong> server{% if guild_count > 1 %}s{%
+                    endif %}</span
+                >
+            </div>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h3>Minimal Permissions</h3>
+                    <p>
+                        ChallengeBots only requests the permissions it actually needs - nothing
+                        more. Your server's security is our priority.
+                    </p>
+                </div>
+                <div class="feature-card">
+                    <h3>No User OAuth Required</h3>
+                    <p>
+                        Unlike other verification bots, your server members don't need to authorize
+                        with their Discord accounts. Simple verification, no complications.
+                    </p>
+                </div>
+                <div class="feature-card">
+                    <h3>Quick Setup</h3>
+                    <p>
+                        Installation takes less than a minute. Just add the bot, set up a
+                        verification channel, and you're done!
+                    </p>
+                </div>
+                <div class="feature-card">
+                    <h3>Privacy First</h3>
+                    <p>
+                        We never store or share user data after verification. Once verified, all
+                        data is immediately deleted.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="how-it-works">
+            <h2>How It Works</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h3>Add the bot to your server</h3>
+                    <p>
+                        Click the invite button above to add ChallengeBots with minimal required
+                        permissions.
+                    </p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h3>Set up verification</h3>
+                    <p>
+                        Use simple commands to create a verification channel where new members
+                        complete a quick human challenge.
+                    </p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h3>Enjoy a bot-free server</h3>
+                    <p>
+                        Real humans pass through, automated raids and spam bots stay out. No data
+                        stored after verification.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <footer>
+            <div class="footer-content">
+                <div class="logo">
+                    <img
+                        src="data:image/webp;base64,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"
+                        alt="ChallengeBots Logo"
+                    />
+                    <h2>ChallengeBots</h2>
+                </div>
+                <div class="links">
+                    <a href="https://github.com/tn3w/ChallengeBots" target="_blank">GitHub</a>
+                    <a href="/dashboard">Dashboard</a>
+                    <a href="/privacy">Privacy Policy</a>
+                </div>
+            </div>
+            <div class="copyright">
+                &copy;
+                <script>
+                    document.write(new Date().getFullYear());
+                </script>
+                ChallengeBots - Open Source Discord Verification
+            </div>
+        </footer>
+        <script>
+            document.getElementById('scrollDown').addEventListener('click', function () {
+                const featuresSection = document.querySelector('.features');
+                featuresSection.scrollIntoView({ behavior: 'smooth' });
+            });
+
+            fetch('/api/user')
+                .then((response) => response.json())
+                .then((data) => {
+                    if (data.success && data.logged_in) {
+                        document.getElementById('user-auth-section').innerHTML = `
+                            <div class="user-info" id="userSection">
+                                <img class="user-avatar" src="${data.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png'}" alt="User Avatar">
+                                <span class="user-name">${data.username || 'Unknown User'}</span>
+                                <div class="dropdown-arrow"></div>
+                                <div class="dropdown-menu" id="userDropdown">
+                                    <a href="/dashboard">Dashboard</a>
+                                    <a href="/logout">Logout</a>
+                                </div>
+                            </div>
+                        `;
+
+                        const userSection = document.getElementById('userSection');
+                        const userDropdown = document.getElementById('userDropdown');
+
+                        userSection.addEventListener('click', function () {
+                            userDropdown.classList.toggle('active');
+                        });
+
+                        document.addEventListener('click', function (event) {
+                            if (!userSection.contains(event.target)) {
+                                userDropdown.classList.remove('active');
+                            }
+                        });
+                    }
+                })
+                .catch((error) => {
+                    console.error('Error checking user authentication:', error);
+                });
+        </script>
+    </body>
+</html>

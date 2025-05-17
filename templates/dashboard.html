@@ -1,0 +1,1477 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>ChallengeBots</title>
+        <style>
+            :root {
+                --background: #f5f7fa;
+                --box-background: #ffffff;
+                --text: #333333;
+                --text-secondary: #6c757d;
+                --section-background: #ffffff;
+                --accent-color: #5865f2;
+                --accent-hover: #4752c4;
+                --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+                --border-color: rgba(0, 0, 0, 0.1);
+                --disabled-background: #e9ecef;
+                --disabled-text: #6c757d;
+                --success-color: #43b581;
+                --error-color: #f04747;
+                --warning-color: #faa61a;
+                --border-radius: 10px;
+                --transition-speed: 0.2s;
+                --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            }
+
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --background: #1e2124;
+                    --box-background: #2f3136;
+                    --section-background: #36393f;
+                    --text: #ffffff;
+                    --text-secondary: #b9bbbe;
+                    --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+                    --accent-color: #5865f2;
+                    --accent-hover: #4752c4;
+                    --border-color: rgba(255, 255, 255, 0.1);
+                    --disabled-background: #40444b;
+                    --disabled-text: #72767d;
+                }
+            }
+
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+                font-family: var(--font-family);
+            }
+
+            body {
+                background-color: var(--background);
+                color: var(--text);
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                line-height: 1.6;
+            }
+
+            header {
+                background-color: var(--section-background);
+                padding: 15px 30px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 1px solid var(--border-color);
+                box-shadow: var(--card-shadow);
+                position: sticky;
+                top: 0;
+                z-index: 100;
+            }
+
+            .logo {
+                display: flex;
+                align-items: center;
+                text-decoration: none;
+                transition: opacity var(--transition-speed);
+            }
+
+            .logo:hover {
+                opacity: 0.9;
+            }
+
+            .logo img {
+                width: 36px;
+                height: 36px;
+                margin-right: 12px;
+                border-radius: 8px;
+            }
+
+            .logo h2 {
+                text-decoration: none;
+                color: var(--text);
+                font-size: 1.4rem;
+                font-weight: 600;
+            }
+
+            .user-info {
+                display: flex;
+                align-items: center;
+                position: relative;
+                cursor: pointer;
+                padding: 8px 15px;
+                border-radius: var(--border-radius);
+                transition: background-color var(--transition-speed);
+            }
+
+            .user-info:hover {
+                background-color: var(--box-background);
+            }
+
+            .user-avatar {
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                margin-right: 12px;
+                object-fit: cover;
+                border: 2px solid var(--accent-color);
+            }
+
+            .user-name {
+                font-size: 1rem;
+                font-weight: 600;
+                color: var(--text);
+                margin-right: 8px;
+            }
+
+            .dropdown-arrow {
+                width: 10px;
+                height: 10px;
+                border-right: 2px solid var(--text-secondary);
+                border-bottom: 2px solid var(--text-secondary);
+                transform: rotate(45deg);
+                margin-right: 5px;
+                transition: transform var(--transition-speed);
+            }
+
+            .user-info:hover .dropdown-arrow {
+                transform: rotate(-135deg);
+            }
+
+            .dropdown-menu {
+                position: absolute;
+                top: calc(100% + 10px);
+                right: 0;
+                background-color: var(--section-background);
+                box-shadow: var(--card-shadow);
+                border-radius: var(--border-radius);
+                min-width: 180px;
+                z-index: 100;
+                display: none;
+                opacity: 0;
+                transform: translateY(-10px);
+                transition: opacity var(--transition-speed), transform var(--transition-speed);
+                overflow: hidden;
+                border: 1px solid var(--border-color);
+            }
+
+            .dropdown-menu.active,
+            .user-info:hover .dropdown-menu {
+                display: block;
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            .dropdown-menu a {
+                display: block;
+                padding: 12px 20px;
+                text-decoration: none;
+                color: var(--text);
+                transition: background-color var(--transition-speed);
+                font-weight: 500;
+                border-bottom: 1px solid var(--border-color);
+            }
+
+            .dropdown-menu a:last-child {
+                border-bottom: none;
+            }
+
+            .dropdown-menu a:hover {
+                background-color: var(--box-background);
+                color: var(--accent-color);
+            }
+
+            main {
+                flex: 1;
+                padding: 30px;
+                max-width: 1200px;
+                margin: 0 auto;
+                width: 100%;
+            }
+
+            .dashboard-title {
+                margin-bottom: 25px;
+                font-size: 1.8rem;
+                font-weight: 700;
+                color: var(--text);
+            }
+
+            .server-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+                gap: 20px;
+                margin-top: 20px;
+                width: 100%;
+            }
+
+            .server-card {
+                background-color: var(--box-background);
+                border-radius: var(--border-radius);
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                cursor: pointer;
+                transition: transform var(--transition-speed), box-shadow var(--transition-speed);
+                text-decoration: none;
+                color: var(--text);
+                box-shadow: var(--card-shadow);
+                position: relative;
+                overflow: hidden;
+                height: 100%;
+            }
+
+            .server-card::after {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 5px;
+                background-color: var(--accent-color);
+                transform: scaleX(0);
+                transform-origin: left;
+                transition: transform var(--transition-speed);
+            }
+
+            .server-card:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+            }
+
+            .server-card:hover::after {
+                transform: scaleX(1);
+            }
+
+            .server-card.disabled {
+                background-color: var(--disabled-background);
+                color: var(--disabled-text);
+                cursor: default;
+            }
+
+            .server-icon {
+                width: 80px;
+                height: 80px;
+                border-radius: 50%;
+                margin-bottom: 15px;
+                object-fit: cover;
+                border: 3px solid var(--border-color);
+                transition: transform var(--transition-speed);
+            }
+
+            .server-card:hover .server-icon {
+                transform: scale(1.05);
+            }
+
+            .server-name {
+                font-weight: 600;
+                text-align: center;
+                margin-bottom: 15px;
+                font-size: 1.1rem;
+            }
+
+            .server-status {
+                font-size: 0.8rem;
+                padding: 5px 10px;
+                border-radius: 20px;
+                background-color: var(--accent-color);
+                color: white;
+                font-weight: 500;
+                margin-top: auto;
+            }
+
+            .server-status.not-added {
+                background-color: var(--warning-color);
+            }
+
+            .loading {
+                text-align: center;
+                font-size: 1.2rem;
+                margin: 50px 0;
+                color: var(--text-secondary);
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .loading::before {
+                content: "";
+                display: block;
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                border: 3px solid var(--border-color);
+                border-top-color: var(--accent-color);
+                animation: loader-spin 1s linear infinite;
+                margin-bottom: 15px;
+            }
+
+            @keyframes loader-spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            .error {
+                background-color: var(--error-color);
+                color: white;
+                padding: 15px 20px 15px 45px;
+                border-radius: var(--border-radius);
+                margin-bottom: 20px;
+                box-shadow: var(--card-shadow);
+                position: relative;
+                font-weight: 500;
+                animation: slideIn 0.3s ease;
+            }
+            
+            .error::before {
+                content: "!";
+                position: absolute;
+                left: 18px;
+                top: 15px;
+                font-size: 1.2rem;
+                font-weight: bold;
+                width: 20px;
+                height: 20px;
+                text-align: center;
+                line-height: 20px;
+                border-radius: 50%;
+                background-color: white;
+                color: var(--error-color);
+            }
+            
+            @keyframes slideIn {
+                from {
+                    transform: translateY(-20px);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateY(0);
+                    opacity: 1;
+                }
+            }
+
+            /* Footer styles */
+            footer {
+                background-color: var(--section-background);
+                padding: 20px;
+                color: var(--text-secondary);
+                border-top: 1px solid var(--border-color);
+                text-align: center;
+                font-size: 0.9rem;
+            }
+
+            .copyright {
+                text-align: center;
+                font-size: 0.9rem;
+                color: var(--text);
+                opacity: 0.7;
+            }
+
+            @media (prefers-color-scheme: dark) {
+                .error {
+                    background-color: #3a1010;
+                    color: #ff6666;
+                }
+            }
+
+            @media (max-width: 768px) {
+                header,
+                footer {
+                    padding: 15px 20px;
+                }
+
+                main {
+                    padding: 20px;
+                }
+
+                .dashboard-title {
+                    font-size: 1.5rem;
+                }
+                
+                .guild-dashboard {
+                    padding: 20px;
+                }
+                
+                .dashboard-header {
+                    flex-direction: column;
+                    align-items: flex-start;
+                    gap: 15px;
+                }
+                
+                .dashboard-header .button {
+                    width: 100%;
+                    text-align: center;
+                }
+                
+                .tab-button {
+                    padding: 10px 15px;
+                    font-size: 0.9rem;
+                }
+                
+                .verification-item {
+                    flex-direction: column;
+                    align-items: flex-start;
+                    gap: 15px;
+                }
+                
+                .verification-item > div:last-child {
+                    align-self: flex-end;
+                }
+                
+                .verification-editor {
+                    padding: 20px;
+                }
+                
+                .verification-form-grid {
+                    grid-template-columns: 1fr;
+                }
+                
+                .form-actions {
+                    flex-direction: column;
+                    gap: 10px;
+                }
+                
+                .form-actions .button {
+                    width: 100%;
+                }
+            }
+
+            /* Additional media queries for smaller devices */
+            @media (max-width: 576px) {
+                header {
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 15px;
+                    padding: 15px;
+                }
+                
+                .logo h2 {
+                    font-size: 1.3rem;
+                }
+                
+                .logo img {
+                    width: 30px;
+                    height: 30px;
+                }
+                
+                .user-info {
+                    width: 100%;
+                    justify-content: center;
+                }
+                
+                .dropdown-menu {
+                    width: 100%;
+                    right: 0;
+                }
+                
+                .server-grid {
+                    grid-template-columns: 1fr;
+                }
+                
+                .dashboard-tabs {
+                    overflow-x: auto;
+                    padding-bottom: 15px;
+                    margin-bottom: 20px;
+                }
+                
+                .verification-info-row {
+                    flex-wrap: wrap;
+                    gap: 8px;
+                }
+            }
+
+            /* Guild Dashboard Styles */
+            .guild-dashboard {
+                background-color: var(--section-background);
+                border-radius: var(--border-radius);
+                padding: 30px;
+                margin-top: 20px;
+                box-shadow: var(--card-shadow);
+                width: 100%;
+            }
+
+            .dashboard-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 30px;
+                padding-bottom: 20px;
+                border-bottom: 1px solid var(--border-color);
+            }
+
+            .dashboard-header h2 {
+                font-size: 1.6rem;
+                font-weight: 700;
+                color: var(--text);
+            }
+
+            .dashboard-tabs {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 25px;
+                border-bottom: 1px solid var(--border-color);
+                padding-bottom: 10px;
+            }
+
+            .tab-button {
+                background: none;
+                border: none;
+                padding: 12px 20px;
+                cursor: pointer;
+                color: var(--text);
+                opacity: 0.7;
+                border-radius: 8px 8px 0 0;
+                transition: all var(--transition-speed);
+                font-weight: 600;
+                font-size: 1rem;
+                position: relative;
+            }
+
+            .tab-button::after {
+                content: '';
+                position: absolute;
+                bottom: -10px;
+                left: 0;
+                height: 3px;
+                width: 100%;
+                background-color: var(--accent-color);
+                transform: scaleX(0);
+                transition: transform var(--transition-speed);
+            }
+
+            .tab-button:hover {
+                opacity: 1;
+                background-color: rgba(88, 101, 242, 0.1);
+            }
+
+            .tab-button.active {
+                color: var(--accent-color);
+                opacity: 1;
+            }
+
+            .tab-button.active::after {
+                transform: scaleX(1);
+            }
+
+            .tab-content {
+                display: none;
+            }
+
+            .tab-content.active {
+                display: block;
+                animation: fadeIn 0.3s ease;
+            }
+
+            @keyframes fadeIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(10px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+            .verification-list h3 {
+                font-size: 1.3rem;
+                margin-bottom: 20px;
+                color: var(--text);
+                font-weight: 600;
+            }
+
+            .verification-items {
+                margin-bottom: 25px;
+            }
+
+            .verification-item {
+                background-color: var(--box-background);
+                border-radius: var(--border-radius);
+                padding: 20px;
+                margin-bottom: 15px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                box-shadow: var(--card-shadow);
+                transition: transform var(--transition-speed);
+                border-left: 4px solid var(--accent-color);
+            }
+
+            .verification-item:hover {
+                transform: translateX(5px);
+            }
+
+            .verification-info {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .verification-info strong {
+                color: var(--accent-color);
+                font-weight: 600;
+            }
+
+            .verification-info-row {
+                display: flex;
+                align-items: center;
+                gap: 15px;
+            }
+
+            .verification-info-item {
+                background-color: var(--background);
+                padding: 6px 12px;
+                border-radius: 20px;
+                font-size: 0.9rem;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+            }
+
+            .verification-actions {
+                margin-top: 30px;
+            }
+
+            .verification-editor {
+                background-color: var(--box-background);
+                border-radius: var(--border-radius);
+                padding: 25px;
+                margin-top: 25px;
+                box-shadow: var(--card-shadow);
+                border-top: 4px solid var(--accent-color);
+            }
+
+            .verification-editor h3 {
+                font-size: 1.4rem;
+                margin-bottom: 25px;
+                color: var(--text);
+                font-weight: 600;
+                border-bottom: 1px solid var(--border-color);
+                padding-bottom: 15px;
+            }
+            
+            .verification-form-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 16px;
+                margin-bottom: 20px;
+            }
+            
+            .verification-form-grid .full-width {
+                grid-column: 1 / -1;
+            }
+
+            .form-group {
+                margin-bottom: 20px;
+            }
+
+            .form-group label {
+                display: block;
+                margin-bottom: 8px;
+                font-weight: 600;
+                color: var(--text);
+            }
+
+            .form-group small {
+                display: block;
+                margin-top: 5px;
+                color: var(--text-secondary);
+                font-size: 0.85rem;
+            }
+
+            .form-group input,
+            .form-group select,
+            .form-group textarea {
+                width: 100%;
+                padding: 12px;
+                border-radius: 8px;
+                border: 1px solid var(--border-color);
+                background-color: var(--section-background);
+                color: var(--text);
+                font-size: 1rem;
+                transition: border-color var(--transition-speed), box-shadow var(--transition-speed);
+            }
+
+            .form-group input:focus,
+            .form-group select:focus,
+            .form-group textarea:focus {
+                outline: none;
+                border-color: var(--accent-color);
+                box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.2);
+            }
+
+            .form-actions {
+                display: flex;
+                justify-content: flex-end;
+                gap: 15px;
+                margin-top: 30px;
+                padding-top: 20px;
+                border-top: 1px solid var(--border-color);
+            }
+
+            .button {
+                padding: 12px 24px;
+                border-radius: 8px;
+                border: none;
+                cursor: pointer;
+                font-weight: 600;
+                text-decoration: none;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                transition: all var(--transition-speed);
+                font-size: 1rem;
+            }
+
+            .primary-button {
+                background-color: var(--accent-color);
+                color: white;
+            }
+
+            .primary-button:hover {
+                background-color: var(--accent-hover);
+                transform: translateY(-2px);
+            }
+
+            .secondary-button {
+                background-color: var(--box-background);
+                color: var(--text);
+                border: 1px solid var(--border-color);
+            }
+
+            .secondary-button:hover {
+                background-color: var(--background);
+                color: var(--accent-color);
+            }
+
+            .toast-notification {
+                position: fixed;
+                bottom: 30px;
+                right: 30px;
+                background-color: var(--success-color);
+                color: white;
+                padding: 15px 25px;
+                border-radius: 8px;
+                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+                z-index: 1000;
+                transition: transform 0.3s, opacity 0.3s;
+                transform: translateY(20px);
+                opacity: 0;
+                font-weight: 500;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+
+            .toast-notification::before {
+                content: '✓';
+                font-weight: bold;
+                font-size: 1.2rem;
+            }
+
+            .toast-notification.error {
+                background-color: var(--error-color);
+            }
+
+            .toast-notification.error::before {
+                content: '✕';
+            }
+
+            .toast-notification.show {
+                transform: translateY(0);
+                opacity: 1;
+            }
+
+            #guildDashboardContainer {
+                width: 100%;
+            }
+            
+            .server-detail-container {
+                background-color: var(--section-background);
+                border-radius: var(--border-radius);
+                padding: 30px;
+                box-shadow: var(--card-shadow);
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+                gap: 20px;
+            }
+            
+            .server-detail-container h2 {
+                font-size: 1.8rem;
+                color: var(--text);
+                margin-bottom: 10px;
+            }
+            
+            .server-detail-container p {
+                margin-bottom: 20px;
+                color: var(--text-secondary);
+            }
+            
+            .server-detail-container .button {
+                margin: 5px;
+                min-width: 200px;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <a href="/" class="logo">
+                <img
+                    src="data:image/webp;base64,UklGRoAGAABXRUJQVlA4WAoAAAAQAAAAJwAAJwAAQUxQSNYBAAABkLNtmyk47zff7G5s2066te0qW2X/QGwbnVU5qbbKf9gqtdHZts6cmS84mHUbERMAgLVChyrN+J8AUAxxQoohAASAULJ5NijKJ2HulnIQGKVOXk0gAkDQ+aUlkaX5GSAAiqa+E6kFZ2CPfJdKMEA0oF0Stg8gAjSWylc5iQxF8566a4OJiLN0hYQ2NpQKncVENO6B+1oIBqPBjIViAMi676xEWnc/CwBYYVbYCgaYyswoYlD+8j072n65KPerbceeFQUKTEOCcvoPlWYMoeW6eL3eAhoV1CKiIhiNIyLOGGOTWGOMFTmMUUF1jFXrxVjxGhpZS7Yyqvpzzs/QiWcX/sj+XBVV+/KKhOI9lEsva6Oqvz92zp9zj77XRGVLIB36W7KjDontGCtnlQKjUqx0cCjN4AzsdaajjN2LjAzslo6TXZ1md99ij+s4t+e/7fKzo37KFmQoWvBLOvzTLFJQKLr6y3WE+3l+CQiAAr0R58/JG0ABAKlhrzvm9TBF/4HolrP+rLtFhEiN02L8GTkDHaWwIDTOlzPhAqgoMPZKYP3YQPaCEUuM0yLWeLQip8EUBygsuy1eb7dCIbmCLlq1a3fKXauKNBTSMjwz0hNrnZFSaybEA1ZQOCCEBAAA0BcAnQEqKAAoAD4xFolDIiEhE5wFtCADBLYATplCQRPPPx25azd3uRv9xg6/HqA21fmA/XL/AfzP3hvQB+N3qzdYp+t3sAfrd6XHsifsB6QtLe+75C/+czju7ycZ/mP+i42+2c8nL+zeL7Fn/oPuA+MT/U+2b3B/SH/b9wX+N/1D/Y/mr8Ufrg/Zn2Iv0zBirBZoe1ZOtsDPsHPYVKOGFygncBP3637yAT3mz3ycq3awayuQeOWNqF9m/ket6W5NZuYX344YAAD+8OfRcLbRA8hPxqCd5gaPjZ3ovyvLoUTDA2mmm7JyKahxwJpyqRY69VYfvbGKa7MrwaG5hlFEXc3X31lyXTcPOv688Z8xfVRHNDnDuRNh/FLcwxkyJr2H3AyneVmzFDB/kc9Cuzf/TZT1EYuFq5UlE6GXFubIDci2Dj9/mHJ/+LEQckOiPOF4SCbjvauCP/63WDfmQfDYUHid1Vbf/IqQXwBAw832+NW/vI2Gfm7c8P8e/AL1vw0JaqnpN0jWKjAtOfObcCj2aigN14Uv0GWZgBRvAh1+Ros/h14c8NVzP1O5catzZg2BMUsqEEwwsj+5FrAUF1meNGJ15H8A6/aJvUVfJf84e+6Q74Y0/+k7bz2dMb/kVcm2A98JdBO3gJQcuvwWtTay41By6h4+auFewD7D8ttrA/YBn/lV47nR0db+sC52RypEUi0ZSUE91VpwoNSMKvGCULQGwfp7bu//yGRtq0bs5qCO+ukPsmLem3QP/j9PGv/8/ca/NNvVNzfqx2SAmLjx679hMOF6mNFU4GUB8E0lEjG97w0hv5qjraQHkN6ek+cLFPF/6Yr/kG2WxL49nZfIVd/m1m7cg/f1NpqvGLxW3Lf/s7I/NTsZwbum83r/HRmrX5tw3KPzisqL/aPHkDNzIpK7n3Nhf+XeWR3lGdvZGcgsdwae2O/jsZm6vBhkLx9Cc6JUT30Hswa62NmvYutajDzHYNGS4VsOv+ITXWR7CgA+qyeZipsNrq3o/vBPd+fBkqtsCC+RADEQiOqu6lDHRDxwVFJRgLzgfmslQNvi33//V/9W1TAtIxo71438Ui3+JrRnzumKsR/OKfweNflaHc6dZWLzZz+pBF/iHujGU01h3qPv+ca5eVT1zFEYv1HzqzCgWHbnRYXmv8P34MfexPWjT5tbs3VwybuT/kQ5gh1v2/8j/ytsde+Mt9++1v30oNoQ/YAM13vkvTU9/7RAOFP0SFJ0o7KuK4/NrRR8h5QcyK8WOuzhepoQ069/9MLw+Aw6atX07I8vWS/uow/nzwAdZr7SJNEl8QuBgt/8M1Nz37Ge4pALPMH0uk5VomsCmmpb/dwzvqyPwK36VIy1sCjmFSL/JcjzZZxrcipHXnPSAm3hGSn2ZO5ez2P5uZJkophawW8X/TrSePCx0DZyyh6UeI3TkzVSptuBb/URpiYFWxJzP+4+jxGMu3bCNRXlr49oM6h1LHLBnfDEv/1aiQiNsnPPI7fszBsO+5QlxCPQztRkY4VkEkEkEEWWTkkXWNQAAA=="
+                    alt="ChallengeBots Logo"
+                />
+                <h2>ChallengeBots</h2>
+            </a>
+            <div id="userSection" class="user-info">
+                <div class="loading">Loading user info...</div>
+                <div class="dropdown-menu" id="userDropdown">
+                    <a href="/dashboard">Dashboard</a>
+                    <a href="/logout">Logout</a>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <div id="serverView">
+                <h1 class="dashboard-title">Select a server:</h1>
+                <div id="error" class="error" style="display: none"></div>
+                <div id="serverListContainer">
+                    <div id="serverList" class="server-grid"></div>
+                </div>
+            </div>
+            
+            <div id="guildDashboardContainer" style="display: none;"></div>
+            
+            <div id="toast-notification" class="toast-notification" style="display: none;">
+                <span id="toast-message"></span>
+            </div>
+        </main>
+
+        <footer>
+            <div class="copyright">
+                &copy;
+                <script>
+                    document.write(new Date().getFullYear());
+                </script>
+                ChallengeBots - Open Source Discord Verification
+            </div>
+        </footer>
+
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                const userSection = document.getElementById('userSection');
+                const userDropdown = document.getElementById('userDropdown');
+                const serverList = document.getElementById('serverList');
+                const serverListContainer = document.getElementById('serverListContainer');
+                const serverView = document.getElementById('serverView');
+                const guildDashboardContainer = document.getElementById('guildDashboardContainer');
+                const errorElement = document.getElementById('error');
+                let currentGuildId = null;
+                
+                // Extract guild ID from URL if available
+                const pathParts = window.location.pathname.split('/');
+                const guildIdFromUrl = pathParts.length > 2 ? pathParts[2] : null;
+
+                userSection.addEventListener('click', function () {
+                    userDropdown.classList.toggle('active');
+                });
+
+                document.addEventListener('click', function (event) {
+                    if (!userSection.contains(event.target)) {
+                        userDropdown.classList.remove('active');
+                    }
+                });
+                
+                // Show error message
+                function showError(message) {
+                    errorElement.textContent = message;
+                    errorElement.style.display = 'block';
+                }
+                
+                // Hide error message
+                function hideError() {
+                    errorElement.style.display = 'none';
+                }
+                
+                // Show toast notification
+                function showToast(message, isError = false) {
+                    const toast = document.getElementById('toast-notification');
+                    if (!toast) {
+                        const newToast = document.createElement('div');
+                        newToast.id = 'toast-notification';
+                        newToast.className = isError ? 'toast-notification error' : 'toast-notification';
+                        newToast.innerHTML = `<span id="toast-message">${message}</span>`;
+                        document.body.appendChild(newToast);
+                        
+                        setTimeout(() => {
+                            newToast.classList.add('show');
+                        }, 10);
+                        
+                        setTimeout(() => {
+                            newToast.classList.remove('show');
+                            setTimeout(() => {
+                                document.body.removeChild(newToast);
+                            }, 300);
+                        }, 3000);
+                    } else {
+                        const toastMessage = document.getElementById('toast-message');
+                        toast.className = isError ? 'toast-notification error' : 'toast-notification';
+                        toastMessage.textContent = message;
+                        toast.classList.add('show');
+                        
+                        setTimeout(() => {
+                            toast.classList.remove('show');
+                        }, 3000);
+                    }
+                }
+                
+                // Function to check user authentication
+                function checkAuth() {
+                    return fetch('/api/user')
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if (!data.success) {
+                                showError(data.error || 'Authentication error. Please log in again.');
+                                setTimeout(() => {
+                                    window.location.href = '/';
+                                }, 3000);
+                                return false;
+                            }
+
+                            if (!data.logged_in) {
+                                window.location.href = '/';
+                                return false;
+                            }
+
+                            userSection.innerHTML = `
+                                <img class="user-avatar" src="${data.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png'}" alt="User Avatar">
+                                <span class="user-name">${data.username || 'Unknown User'}</span>
+                                <div class="dropdown-arrow"></div>
+                                <div class="dropdown-menu" id="userDropdown">
+                                    <a href="/dashboard">Dashboard</a>
+                                    <a href="/logout">Logout</a>
+                                </div>
+                            `;
+
+                            const newUserSection = document.getElementById('userSection');
+                            const newUserDropdown = document.getElementById('userDropdown');
+
+                            newUserSection.addEventListener('click', function (event) {
+                                if (!newUserDropdown.contains(event.target)) {
+                                    newUserDropdown.classList.toggle('active');
+                                }
+                            });
+
+                            document.addEventListener('click', function (event) {
+                                if (!newUserSection.contains(event.target)) {
+                                    newUserDropdown.classList.remove('active');
+                                }
+                            });
+                            
+                            return true;
+                        });
+                }
+                
+                // Load server list
+                function loadServers() {
+                    showServerList();
+                    serverList.innerHTML = '<div class="loading">Loading servers...</div>';
+                    
+                    return fetch('/api/servers')
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if (!data.success) {
+                                showError(data.error || 'Failed to load servers.');
+                                return null;
+                            }
+
+                            serverList.innerHTML = '';
+
+                            if (data.servers && data.servers.length > 0) {
+                                data.servers.forEach((server) => {
+                                    const serverCard = document.createElement('a');
+                                    serverCard.className = `server-card ${server.has_bot ? '' : 'disabled'}`;
+                                    
+                                    if (server.has_bot) {
+                                        serverCard.href = `/dashboard/${server.id}`;
+                                        serverCard.dataset.serverId = server.id;
+                                    } else {
+                                        serverCard.href = `https://discord.com/oauth2/authorize?client_id=${data.client_id}&permissions=2415919104&response_type=code&redirect_uri=${encodeURIComponent(data.redirect_uri)}&integration_type=0&scope=guilds+identify+bot&guild_id=${server.id}`;
+                                    }
+
+                                    serverCard.innerHTML = `
+                                        <img class="server-icon" src="${server.icon || 'https://cdn.discordapp.com/embed/avatars/0.png'}" alt="${server.name}">
+                                        <div class="server-name">${server.name}</div>
+                                        <div class="server-status ${server.has_bot ? '' : 'not-added'}">${server.has_bot ? 'Configured' : 'Add Bot'}</div>
+                                    `;
+
+                                    serverList.appendChild(serverCard);
+                                });
+                                
+                                // If there's a guild ID in the URL, select that server
+                                if (guildIdFromUrl) {
+                                    loadGuildInfo(guildIdFromUrl);
+                                }
+                                
+                            } else {
+                                serverList.innerHTML =
+                                    '<p>No servers found. You need to be an admin of at least one Discord server.</p>';
+                            }
+                            
+                            return data;
+                        });
+                }
+                
+                // Show the server list and title
+                function showServerList() {
+                    serverView.style.display = 'block';
+                    guildDashboardContainer.style.display = 'none';
+                }
+                
+                // Hide the server list and title
+                function hideServerList() {
+                    serverView.style.display = 'none';
+                    guildDashboardContainer.style.display = 'block';
+                }
+                
+                // Load guild information
+                function loadGuildInfo(guildId) {
+                    // Show loading state
+                    hideServerList();
+                    guildDashboardContainer.innerHTML = '<div class="loading">Loading server details...</div>';
+                    currentGuildId = guildId;
+                    
+                    // Update URL without reloading
+                    if (window.history && window.history.pushState) {
+                        window.history.pushState({ guildId }, `Server Dashboard - ${guildId}`, `/dashboard/${guildId}`);
+                    }
+                    
+                    return fetch(`/api/guild/${guildId}`)
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! Status: ${response.status}`);
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (!data.success) {
+                                showServerList();
+                                showError(data.error || 'Failed to load server details.');
+                                return;
+                            }
+                            
+                            if (!data.bot_in_guild) {
+                                guildDashboardContainer.innerHTML = `
+                                    <div class="server-detail-container">
+                                        <h2>Bot not configured</h2>
+                                        <p>The bot needs to be added to this server first.</p>
+                                        <a href="${data.invite_url}" class="button primary-button">Add Bot to Server</a>
+                                        <button class="button secondary-button back-to-servers">Back to Servers</button>
+                                    </div>
+                                `;
+                                return;
+                            }
+                            
+                            // Render the guild management interface
+                            renderGuildDashboard(data);
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            showServerList();
+                            showError('An error occurred loading server details. Please try again.');
+                        });
+                }
+                
+                // Render the guild dashboard
+                function renderGuildDashboard(data) {
+                    const { guild_id, channels, roles, verifications } = data;
+                    
+                    // Create the main container
+                    const dashboardHTML = `
+                        <div class="guild-dashboard">
+                            <div class="dashboard-header">
+                                <h2>Server Dashboard</h2>
+                                <button class="button secondary-button back-to-servers">Back to Servers</button>
+                            </div>
+                            
+                            <div class="dashboard-tabs">
+                                <button class="tab-button active" data-tab="verifications">Verification Messages</button>
+                            </div>
+                            
+                            <div class="tab-content active" id="verifications-tab">
+                                <div class="verification-list">
+                                    <h3>Current Verification Messages</h3>
+                                    <div id="verification-items" class="verification-items">
+                                        ${verifications.length > 0 ? '' : '<p>No verification messages set up yet.</p>'}
+                                    </div>
+                                    
+                                    <div class="verification-actions">
+                                        <button id="create-verification" class="button primary-button">Create New Verification</button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div id="verification-editor" class="verification-editor" style="display: none;">
+                                <h3 id="editor-title">Create New Verification</h3>
+                                <form id="verification-form">
+                                    <div class="verification-form-grid">
+                                        <div class="form-group">
+                                            <label for="channel-select">Channel</label>
+                                            <select id="channel-select" required>
+                                                <option value="">Select a channel</option>
+                                                ${channels.map(channel => `<option value="${channel.id}">#${channel.name}</option>`).join('')}
+                                            </select>
+                                        </div>
+                                        
+                                        <div class="form-group">
+                                            <label for="role-select">Role to Assign</label>
+                                            <select id="role-select" required>
+                                                <option value="">Select a role</option>
+                                                ${roles.map(role => `<option value="${role.id}">${role.name}</option>`).join('')}
+                                            </select>
+                                        </div>
+                                        
+                                        <div class="form-group">
+                                            <label for="captcha-type">Captcha Type</label>
+                                            <select id="captcha-type" required>
+                                                <option value="hcaptcha">hCaptcha</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <div class="form-group">
+                                            <label for="embed-title">Title</label>
+                                            <input type="text" id="embed-title" value="Verification Required">
+                                        </div>
+                                        
+                                        <div class="form-group full-width">
+                                            <label for="embed-description">Description</label>
+                                            <textarea id="embed-description" rows="3"></textarea>
+                                            <small>Leave empty for default message</small>
+                                        </div>
+                                        
+                                        <div class="form-group">
+                                            <label for="embed-color">Color</label>
+                                            <select id="embed-color">
+                                                <option value="blue">Blue</option>
+                                                <option value="red">Red</option>
+                                                <option value="green">Green</option>
+                                                <option value="gold">Gold</option>
+                                                <option value="purple">Purple</option>
+                                                <option value="orange">Orange</option>
+                                                <option value="blurple">Blurple</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <div class="form-group">
+                                            <label for="embed-footer">Footer (Optional)</label>
+                                            <input type="text" id="embed-footer">
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="form-actions">
+                                        <button type="button" id="cancel-verification" class="button secondary-button">Cancel</button>
+                                        <button type="submit" id="save-verification" class="button primary-button">Create Verification</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    `;
+                    
+                    guildDashboardContainer.innerHTML = dashboardHTML;
+                    
+                    // Add the verification items
+                    const verificationItemsContainer = document.getElementById('verification-items');
+                    if (verifications.length > 0) {
+                        verifications.forEach(verification => {
+                            const channelName = channels.find(c => c.id === verification.channel_id)?.name || 'Unknown channel';
+                            const roleName = roles.find(r => r.id === verification.role_id)?.name || 'Unknown role';
+                            
+                            const verificationItem = document.createElement('div');
+                            verificationItem.className = 'verification-item';
+                            verificationItem.dataset.id = verification.id;
+                            verificationItem.innerHTML = `
+                                <div class="verification-info">
+                                    <div class="verification-info-row">
+                                        <div class="verification-info-item">
+                                            <strong>Channel:</strong> #${channelName}
+                                        </div>
+                                        <div class="verification-info-item">
+                                            <strong>Role:</strong> ${roleName}
+                                        </div>
+                                        <div class="verification-info-item">
+                                            <strong>Type:</strong> ${verification.captcha_type || 'hCaptcha'}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <button class="button primary-button edit-verification" data-id="${verification.id}">
+                                        Edit
+                                    </button>
+                                </div>
+                            `;
+                            
+                            verificationItemsContainer.appendChild(verificationItem);
+                        });
+                    }
+                    
+                    // Add event listeners
+                    setupEventListeners(data);
+                    
+                    // Directly find and attach the back button event listener
+                    setTimeout(() => {
+                        const backButtons = document.querySelectorAll('.back-to-servers, .dashboard-header .secondary-button');
+                        backButtons.forEach(button => {
+                            // Remove any existing event listeners by cloning the button
+                            const newButton = button.cloneNode(true);
+                            button.parentNode.replaceChild(newButton, button);
+                            
+                            // Add the new event listener
+                            newButton.addEventListener('click', backToServerList);
+                            console.log('Attached event listener to back button:', newButton);
+                        });
+                    }, 100);
+                }
+                
+                // Set up event listeners for the guild dashboard
+                function setupEventListeners(data) {
+                    const createVerificationBtn = document.getElementById('create-verification');
+                    const verificationForm = document.getElementById('verification-form');
+                    const verificationEditor = document.getElementById('verification-editor');
+                    const editorTitle = document.getElementById('editor-title');
+                    const saveVerificationBtn = document.getElementById('save-verification');
+                    const cancelVerificationBtn = document.getElementById('cancel-verification');
+                    
+                    let isEditing = false;
+                    let editingVerificationId = null;
+                    
+                    // Create verification button
+                    if (createVerificationBtn) {
+                        createVerificationBtn.addEventListener('click', () => {
+                            isEditing = false;
+                            editingVerificationId = null;
+                            editorTitle.textContent = 'Create New Verification';
+                            verificationForm.reset();
+                            saveVerificationBtn.textContent = 'Create Verification';
+                            verificationEditor.style.display = 'block';
+                        });
+                    }
+                    
+                    // Edit verification buttons
+                    document.querySelectorAll('.edit-verification').forEach(button => {
+                        button.addEventListener('click', () => {
+                            isEditing = true;
+                            editingVerificationId = button.dataset.id;
+                            editorTitle.textContent = 'Edit Verification';
+                            saveVerificationBtn.textContent = 'Update Verification';
+                            
+                            // Find the verification data
+                            const verification = data.verifications.find(v => v.id === editingVerificationId);
+                            if (!verification) return;
+                            
+                            // Fill the form with existing data
+                            document.getElementById('channel-select').value = verification.channel_id;
+                            document.getElementById('role-select').value = verification.role_id;
+                            document.getElementById('captcha-type').value = verification.captcha_type || 'hcaptcha';
+                            document.getElementById('embed-title').value = verification.embed_title || 'Verification Required';
+                            document.getElementById('embed-description').value = verification.embed_description || '';
+                            document.getElementById('embed-color').value = verification.embed_color || 'blue';
+                            document.getElementById('embed-footer').value = verification.embed_footer || '';
+                            
+                            // Show the editor
+                            verificationEditor.style.display = 'block';
+                        });
+                    });
+                    
+                    // Cancel button
+                    if (cancelVerificationBtn) {
+                        cancelVerificationBtn.addEventListener('click', () => {
+                            verificationEditor.style.display = 'none';
+                        });
+                    }
+                    
+                    // Form submission
+                    if (verificationForm) {
+                        verificationForm.addEventListener('submit', (e) => {
+                            e.preventDefault();
+                            
+                            // Get form values
+                            const channelId = document.getElementById('channel-select').value;
+                            const roleId = document.getElementById('role-select').value;
+                            const captchaType = document.getElementById('captcha-type').value;
+                            const embedTitle = document.getElementById('embed-title').value;
+                            const embedDescription = document.getElementById('embed-description').value;
+                            const embedColor = document.getElementById('embed-color').value;
+                            const embedFooter = document.getElementById('embed-footer').value;
+                            
+                            // Create request body
+                            const requestBody = {
+                                channel_id: channelId,
+                                role_id: roleId,
+                                captcha_type: captchaType,
+                                embed_title: embedTitle,
+                                embed_description: embedDescription,
+                                embed_color: embedColor,
+                                embed_footer: embedFooter,
+                                update_message: true
+                            };
+                            
+                            let url = `/api/guild/${currentGuildId}/verification`;
+                            let method = 'POST';
+                            
+                            if (isEditing && editingVerificationId) {
+                                url = `/api/guild/${currentGuildId}/verification/${editingVerificationId}`;
+                                method = 'PUT';
+                            }
+                            
+                            // Disable form elements during submission
+                            const formElements = verificationForm.querySelectorAll('button, input, select, textarea');
+                            formElements.forEach(el => el.disabled = true);
+                            
+                            fetch(url, {
+                                method: method,
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify(requestBody)
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    showToast(isEditing ? 'Verification updated successfully!' : 'Verification created successfully!');
+                                    verificationEditor.style.display = 'none';
+                                    // Reload the guild info to show the new/updated verification
+                                    loadGuildInfo(currentGuildId);
+                                } else {
+                                    showToast(`Error: ${data.error || 'An unknown error occurred'}`, true);
+                                    // Re-enable form elements
+                                    formElements.forEach(el => el.disabled = false);
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error:', error);
+                                showToast('An error occurred. Please try again.', true);
+                                // Re-enable form elements
+                                formElements.forEach(el => el.disabled = false);
+                            });
+                        });
+                    }
+                }
+                
+                // Handle going back to server list
+                function backToServerList(e) {
+                    if (e) e.preventDefault();
+                    console.log('Back to server list clicked');
+                    
+                    // First hide the guild dashboard
+                    guildDashboardContainer.style.display = 'none';
+                    
+                    // Then show the server view with the server list
+                    serverView.style.display = 'block';
+                    
+                    // Make sure server list container is visible
+                    serverListContainer.style.display = 'block';
+                    
+                    // Update URL and load servers
+                    window.history.pushState({}, 'Dashboard', '/dashboard');
+                    
+                    // Clear any existing error messages
+                    errorElement.style.display = 'none';
+                    
+                    // Show loading indicator
+                    serverList.innerHTML = '<div class="loading">Loading servers...</div>';
+                    
+                    // Load the servers
+                    fetch('/api/servers')
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if (!data.success) {
+                                showError(data.error || 'Failed to load servers.');
+                                return;
+                            }
+
+                            serverList.innerHTML = '';
+
+                            if (data.servers && data.servers.length > 0) {
+                                data.servers.forEach((server) => {
+                                    const serverCard = document.createElement('a');
+                                    serverCard.className = `server-card ${server.has_bot ? '' : 'disabled'}`;
+                                    
+                                    if (server.has_bot) {
+                                        serverCard.href = `/dashboard/${server.id}`;
+                                        serverCard.dataset.serverId = server.id;
+                                    } else {
+                                        serverCard.href = `https://discord.com/oauth2/authorize?client_id=${data.client_id}&permissions=2415919104&response_type=code&redirect_uri=${encodeURIComponent(data.redirect_uri)}&integration_type=0&scope=guilds+identify+bot&guild_id=${server.id}`;
+                                    }
+
+                                    serverCard.innerHTML = `
+                                        <img class="server-icon" src="${server.icon || 'https://cdn.discordapp.com/embed/avatars/0.png'}" alt="${server.name}">
+                                        <div class="server-name">${server.name}</div>
+                                        <div class="server-status ${server.has_bot ? '' : 'not-added'}">${server.has_bot ? 'Configured' : 'Add Bot'}</div>
+                                    `;
+
+                                    serverList.appendChild(serverCard);
+                                });
+                            } else {
+                                serverList.innerHTML =
+                                    '<p>No servers found. You need to be an admin of at least one Discord server.</p>';
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            showError('An error occurred while loading servers. Please try again.');
+                        });
+                }
+                
+                // Initialize
+                checkAuth()
+                    .then(isAuthenticated => {
+                        if (isAuthenticated) {
+                            return loadServers();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showError('An error occurred. Please try again.');
+                    });
+                
+                // Handle browser back/forward navigation
+                window.addEventListener('popstate', function(event) {
+                    const pathParts = window.location.pathname.split('/');
+                    const guildId = pathParts.length > 2 ? pathParts[2] : null;
+                    
+                    if (guildId) {
+                        loadGuildInfo(guildId);
+                    } else {
+                        showServerList();
+                        loadServers();
+                    }
+                });
+
+                // Create event delegation for back button clicks to ensure they work
+                document.addEventListener('click', function(e) {
+                    // Find if the clicked element or any of its parents are the back button
+                    let target = e.target;
+                    
+                    while (target && target !== document) {
+                        if (target.classList.contains('back-to-servers') || 
+                            (target.matches('.dashboard-header .secondary-button') && 
+                             target.textContent.trim() === 'Back to Servers') ||
+                            (target.tagName === 'A' && target.textContent.trim() === 'Back to Servers')) {
+                            console.log('Back button clicked:', target);
+                            backToServerList(e);
+                            return;
+                        }
+                        target = target.parentElement;
+                    }
+                });
+            });
+        </script>
+    </body>
+</html>

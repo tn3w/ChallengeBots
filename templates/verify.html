@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>🤖 Beep beop Boop? | ChallengeBots</title>
+        <style>
+            :root {
+                --background: #f2f2f2;
+                --text: #181818;
+                --success-color: #2ea043;
+                --error-color: #e5484d;
+            }
+
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --background: #121212;
+                    --text: #f2f2f2;
+                    --success-color: #57f287;
+                    --error-color: #ed4245;
+                }
+            }
+
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+                font-family: Arial, sans-serif;
+            }
+
+            body {
+                background-color: var(--background);
+                color: var(--text);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .profile-image {
+                width: 150px;
+                height: 150px;
+                border-radius: 50%;
+                background-color: #ccc;
+                margin-bottom: 20px;
+                object-fit: cover;
+                position: relative;
+            }
+
+            .profile-image-container {
+                position: relative;
+                margin-bottom: 20px;
+            }
+
+            .status-indicator {
+                position: absolute;
+                top: 0;
+                right: 0;
+                width: 50px;
+                height: 50px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+            }
+
+            .success-indicator {
+                background-color: var(--success-color);
+            }
+
+            .error-indicator {
+                background-color: var(--error-color);
+            }
+
+            .status-indicator svg {
+                width: 30px;
+                height: 30px;
+                stroke-width: 3;
+                stroke: white;
+                fill: none;
+            }
+
+            .user-info {
+                font-size: 1.5rem;
+                font-weight: bold;
+            }
+
+            .verify-message {
+                margin: 20px 0;
+            }
+
+            .screen {
+                display: none;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                max-width: 500px;
+                text-align: center;
+            }
+
+            .screen.active {
+                display: flex;
+            }
+
+            .spinner {
+                margin: 20px auto;
+                width: 30px;
+                height: 30px;
+                border: 3px solid rgba(128, 128, 128, 0.3);
+                border-radius: 50%;
+                border-top-color: var(--text);
+                animation: spin 1s infinite linear;
+            }
+
+            .message {
+                padding: 15px;
+                border-radius: 4px;
+                margin: 20px 0;
+                font-size: 1rem;
+                max-width: 400px;
+            }
+
+            .success {
+                border: 1px solid var(--success-color);
+                color: var(--success-color);
+            }
+
+            .error {
+                border: 1px solid var(--error-color);
+                color: var(--error-color);
+            }
+
+            .hidden {
+                display: none !important;
+            }
+
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+        </style>
+        <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+    </head>
+    <body>
+        <div id="loading-screen" class="screen active">
+            <div class="profile-image-container hidden">
+                <img
+                    id="loading-profile-image"
+                    class="profile-image"
+                    src=""
+                    alt="Profile picture"
+                />
+            </div>
+            <div id="loading-user-info" class="user-info hidden"></div>
+            <div class="spinner"></div>
+            <p>Please wait while we verify your account...</p>
+        </div>
+
+        <div id="error-screen" class="screen">
+            <div class="profile-image-container">
+                <img id="error-profile-image" class="profile-image" src="" alt="Profile picture" />
+                <div class="status-indicator error-indicator">
+                    <svg viewBox="0 0 24 24">
+                        <path
+                            d="M18 6L6 18M6 6l12 12"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
+                </div>
+            </div>
+            <div id="error-user-info" class="user-info"></div>
+            <h2>Verification Failed</h2>
+            <div class="message error" id="error-message">
+                An error occurred during verification.
+            </div>
+            <p>Please return to Discord and try again.</p>
+        </div>
+
+        <div id="verify-screen" class="screen">
+            <div class="profile-image-container">
+                <img id="profile-image" class="profile-image" src="" alt="Profile picture" />
+            </div>
+            <div id="user-info" class="user-info"></div>
+            <p class="verify-message">Please complete the captcha below to verify your account</p>
+            <div class="h-captcha" data-sitekey="{{ site_key }}" data-theme="light"></div>
+        </div>
+
+        <div id="success-screen" class="screen">
+            <div class="profile-image-container">
+                <img
+                    id="success-profile-image"
+                    class="profile-image"
+                    src=""
+                    alt="Profile picture"
+                />
+                <div class="status-indicator success-indicator">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </div>
+            </div>
+            <div id="success-user-info" class="user-info"></div>
+            <div class="message success">You have been successfully verified.</div>
+            <p>You can now return to Discord.</p>
+        </div>
+
+        <script>
+            const getTheme = () =>
+                window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                    ? 'dark'
+                    : 'light';
+
+            const updateCaptcha = () => {
+                const captchaElement = document.querySelector('.h-captcha');
+                if (!captchaElement) return;
+
+                const theme = getTheme();
+                captchaElement.setAttribute('data-theme', theme);
+
+                if (window.hcaptcha) {
+                    const siteKey = captchaElement.getAttribute('data-sitekey');
+                    window.hcaptcha.remove();
+                    window.hcaptcha.render(captchaElement, {
+                        sitekey: siteKey,
+                        theme: theme,
+                        callback: onCaptchaComplete,
+                    });
+                }
+            };
+
+            const showScreen = (screen) => {
+                const screens = [
+                    'loading-screen',
+                    'error-screen',
+                    'verify-screen',
+                    'success-screen',
+                ].map((id) => document.getElementById(id));
+
+                screens.forEach((s) => s.classList.remove('active'));
+                screen.classList.add('active');
+            };
+
+            const showError = (message) => {
+                const errorMessage = document.getElementById('error-message');
+                errorMessage.textContent = message;
+                showScreen(document.getElementById('error-screen'));
+            };
+
+            const updateUserProfileVisibility = (hasUserData) => {
+                const profileElements = [
+                    'loading-profile-image',
+                    'loading-user-info',
+                    'error-profile-image',
+                    'error-user-info',
+                    '#loading-screen .profile-image-container',
+                    '#error-screen .profile-image-container',
+                ].map((selector) =>
+                    selector.startsWith('#')
+                        ? document.querySelector(selector)
+                        : document.getElementById(selector)
+                );
+
+                profileElements.forEach((element) => {
+                    if (element) {
+                        element.classList.toggle('hidden', !hasUserData);
+                    }
+                });
+            };
+
+            const updateUserInfo = (data) => {
+                const screens = ['', 'loading-', 'error-', 'success-'];
+                const username =
+                    data.discriminator && data.discriminator !== '0'
+                        ? `${data.username}#${data.discriminator}`
+                        : data.username;
+
+                screens.forEach((prefix) => {
+                    const imgEl = document.getElementById(`${prefix || ''}profile-image`);
+                    const userEl = document.getElementById(`${prefix}user-info`);
+
+                    if (imgEl) imgEl.src = data.avatar_url;
+                    if (userEl) userEl.textContent = username;
+                });
+
+                updateUserProfileVisibility(true);
+            };
+
+            const validateTokens = (verificationId, userToken) => {
+                showScreen(document.getElementById('loading-screen'));
+
+                return fetch(
+                    `/api/verify-tokens?verification_id=${encodeURIComponent(verificationId)}&token=${encodeURIComponent(userToken)}`
+                )
+                    .then((response) => response.json())
+                    .then((data) => {
+                        if (data.success) {
+                            updateUserInfo(data);
+                            showScreen(document.getElementById('verify-screen'));
+                        } else {
+                            updateUserProfileVisibility(false);
+                            showError(data.error || 'Invalid or expired verification link.');
+                        }
+                    })
+                    .catch((error) => {
+                        console.error('Error:', error);
+                        updateUserProfileVisibility(false);
+                        showError('An error occurred while validating your verification link.');
+                    });
+            };
+
+            const submitVerification = (captchaResponse) => {
+                const verificationId = window.verificationId;
+                const userToken = window.userToken;
+
+                showScreen(document.getElementById('loading-screen'));
+
+                fetch('/api/complete-verification', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        verification_id: verificationId,
+                        user_token: userToken,
+                        captcha_response: captchaResponse,
+                    }),
+                })
+                    .then((response) => response.json())
+                    .then((data) => {
+                        if (data.success) {
+                            showScreen(document.getElementById('success-screen'));
+                        } else {
+                            document.getElementById('error-message').textContent =
+                                data.error || 'Verification failed. Please try again.';
+                            showScreen(document.getElementById('error-screen'));
+                        }
+                    })
+                    .catch((error) => {
+                        console.error('Error:', error);
+                        document.getElementById('error-message').textContent =
+                            'An error occurred during verification.';
+                        showScreen(document.getElementById('error-screen'));
+                    });
+            };
+
+            document.addEventListener('DOMContentLoaded', () => {
+                updateUserProfileVisibility(false);
+                updateCaptcha();
+
+                if (window.matchMedia) {
+                    window
+                        .matchMedia('(prefers-color-scheme: dark)')
+                        .addEventListener('change', updateCaptcha);
+                }
+
+                window.hcaptchaCallback = (token) => submitVerification(token);
+
+                if (document.querySelector('.h-captcha')) {
+                    document
+                        .querySelector('.h-captcha')
+                        .setAttribute('data-callback', 'hcaptchaCallback');
+                }
+
+                const hash = window.location.hash.substring(1);
+
+                if (hash) {
+                    const parts = hash.split('.');
+                    if (parts.length === 2) {
+                        const [verificationId, userToken] = parts;
+
+                        window.verificationId = verificationId;
+                        window.userToken = userToken;
+
+                        if (verificationId && userToken) {
+                            validateTokens(verificationId, userToken);
+                        } else {
+                            showError(
+                                'Invalid verification link. Please return to Discord and try again.'
+                            );
+                        }
+                    } else {
+                        showError('Invalid verification link format.');
+                    }
+                } else {
+                    showError('Missing verification link parameters.');
+                }
+            });
+        </script>
+    </body>
+</html>
