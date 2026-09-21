@@ -1,30 +1,22 @@
 import asyncio
+import logging
+import os
 
-try:
-    import uvloop
+from dotenv import load_dotenv
 
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-except ImportError:
-    print("uvloop not available, using default asyncio loop")
+load_dotenv()
 
-from src.app import run_app
-from src.bot import run_bot
+from src import database  # noqa: E402
+from src.app import run_app  # noqa: E402
+from src.bot import bot  # noqa: E402
 
 
 async def main():
-    """
-    Start the web app and the bot.
-
-    Returns:
-        None
-    """
-
-    try:
-        async with asyncio.TaskGroup() as group:
-            group.create_task(run_app())
-            group.create_task(run_bot())
-    except asyncio.CancelledError:
-        pass
+    logging.basicConfig(level=logging.INFO)
+    database.initialize()
+    async with asyncio.TaskGroup() as group:
+        group.create_task(run_app())
+        group.create_task(bot.start(os.environ["DISCORD_TOKEN"]))
 
 
 if __name__ == "__main__":
